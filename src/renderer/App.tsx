@@ -13,10 +13,14 @@ export function App() {
   const [showHistory, setShowHistory] = useState(false)
   useEffect(() => { st.loadIndex(); st.browse('') }, [])
 
-  const toggle = (id: string, multi: boolean) => {
-    const next = new Set(multi ? st.selectedSessions : [])
-    if (st.selectedSessions.has(id) && multi) next.delete(id); else next.add(id)
+  const toggle = (id: string) => {
+    const next = new Set(st.selectedSessions)
+    if (next.has(id)) next.delete(id); else next.add(id)
     st.setSelectedSessions(next)
+  }
+  const toggleAll = () => {
+    if (st.selectedSessions.size === st.sessions.length) st.setSelectedSessions(new Set())
+    else st.setSelectedSessions(new Set(st.sessions.map((s) => s.session_id)))
   }
   const startMove = async () => st.setPreview(await window.api.previewMove([...st.selectedSessions], st.targetDir!))
   const confirmMove = async () => {
@@ -29,7 +33,7 @@ export function App() {
     <div className="app">
       <div className="cols">
         <DirectoryPane projects={st.projects} selected={st.selectedProject} onPick={st.pickProject} />
-        <SessionPane sessions={st.sessions} selected={st.selectedSessions} onToggle={toggle} />
+        <SessionPane sessions={st.sessions} selected={st.selectedSessions} onToggle={toggle} onToggleAll={toggleAll} />
         <FsBrowserPane listing={st.fsListing} target={st.targetDir} onBrowse={st.browse} onPickTarget={st.setTargetDir} />
       </div>
       <MoveBar count={st.selectedSessions.size} target={st.targetDir} refreshing={st.refreshing} progress={st.progress} onMove={startMove} onRefresh={st.refresh} onHistory={() => setShowHistory(true)} />

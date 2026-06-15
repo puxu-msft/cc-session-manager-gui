@@ -36,3 +36,7 @@ button.primary:disabled { background: #b9c6e6; cursor: not-allowed; }
 .fsbar .pick.sel { background: #2563eb; color: #fff; }
 .fsbar .pick:disabled { border-color: #ccc; color: #aaa; cursor: not-allowed; }
 .fs-empty { padding: 16px 12px; color: #888; font-size: 12px; }
+.session-head { display: flex; align-items: center; gap: 8px; }
+.sess-row { display: flex; align-items: flex-start; gap: 8px; }
+.sess-check { margin-top: 2px; pointer-events: none; flex: 0 0 auto; }
+.sess-body { min-width: 0; }
