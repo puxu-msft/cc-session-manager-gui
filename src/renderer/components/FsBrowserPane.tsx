@@ -8,18 +8,16 @@ interface FsBrowserPaneProps {
   onPickTarget: (path: string) => void
 }
 
-// 完整的目录探索组件:快捷根(主目录/根)、可输入路径跳转、上级、当前路径面包屑、子目录列表(单击选为目标·双击进入)、
-// 空目录与不可读目录的友好提示。控件始终可见,即使尚未加载到 listing 也不会出现空白面板。
+// 目录探索组件:快捷根(主目录/根)、可输入路径跳转、当前路径面包屑,以及子目录列表。
+// 列表首两项为 .(当前目录,单击即选为目标)与 ..(上级,单击返回);其后是各子目录(单击选为目标·双击进入)。
 export function FsBrowserPane({ listing, target, onBrowse, onPickTarget }: FsBrowserPaneProps) {
   const [input, setInput] = useState('')
-  // 当导航到新目录时,把输入框同步成当前路径,便于查看/编辑后跳转。
   useEffect(() => { if (listing?.path) setInput(listing.path) }, [listing?.path])
 
   const home = listing?.home ?? ''
   const path = listing?.path ?? ''
   const entries = listing?.entries ?? []
 
-  // 当前路径拆成可点击的面包屑段。
   const segments = path ? path.split('/').filter(Boolean) : []
   const crumbPath = (i: number) => '/' + segments.slice(0, i + 1).join('/')
 
@@ -31,12 +29,8 @@ export function FsBrowserPane({ listing, target, onBrowse, onPickTarget }: FsBro
         <div className="fsbar-row">
           {home && <button onClick={() => onBrowse(home)} title={home}>🏠 主目录</button>}
           <button onClick={() => onBrowse('/')}>/ 根目录</button>
-          <button disabled={!listing?.parent} onClick={() => listing?.parent && onBrowse(listing.parent)}>↑ 上级</button>
         </div>
-        <form
-          className="fsbar-row"
-          onSubmit={(e) => { e.preventDefault(); if (input.trim()) onBrowse(input.trim()) }}
-        >
+        <form className="fsbar-row" onSubmit={(e) => { e.preventDefault(); if (input.trim()) onBrowse(input.trim()) }}>
           <input
             className="path-input"
             value={input}
@@ -55,21 +49,26 @@ export function FsBrowserPane({ listing, target, onBrowse, onPickTarget }: FsBro
             </span>
           ))}
         </div>
-        <button
-          className={target === path ? 'pick sel' : 'pick'}
-          disabled={!path}
-          onClick={() => path && onPickTarget(path)}
-        >
-          {target === path && path ? '✓ 已选为目标' : '选当前目录为目标'}
-        </button>
       </div>
 
-      {listing?.error ? (
+      {!listing ? (
+        <div className="fs-empty">加载中…</div>
+      ) : listing.error ? (
         <div className="fs-empty">⚠ {listing.error}</div>
-      ) : entries.length === 0 ? (
-        <div className="fs-empty">{listing ? '此目录下没有子目录,可直接将当前目录选为目标。' : '加载中…'}</div>
       ) : (
         <ul className="list">
+          <li
+            className={target === path ? 'row sel' : 'row'}
+            onClick={() => onPickTarget(path)}
+            title="选当前目录为目标"
+          >
+            <div className="row-title">📂 .{target === path ? '  ✓ 已选为目标(当前目录)' : '  (当前目录,单击选为目标)'}</div>
+          </li>
+          {listing.parent && (
+            <li className="row" onClick={() => onBrowse(listing.parent!)} title="返回上级目录">
+              <div className="row-title">↩ ..{'  (上级目录)'}</div>
+            </li>
+          )}
           {entries.map((e) => (
             <li
               key={e.path}
