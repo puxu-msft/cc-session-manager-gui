@@ -90,6 +90,8 @@ describe('refresh 端到端落库链路(真实 better-sqlite3,非 UI)', () => {
     expect((sessions.find((s: any) => s.session_id === 's2') as any).moved_flag).toBeFalsy()
     rmSync(root, { recursive: true, force: true })
   })
+
+  it('复用确实跳过解析:文件 size+mtime 未变时 reuse 命中,不重新读内容', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ref-'))
     const db = openDb(':memory:')
     writeSession(root, '/p', 's1', [line({ type: 'user', cwd: '/p', timestamp: 't', message: { content: 'x' } })])
