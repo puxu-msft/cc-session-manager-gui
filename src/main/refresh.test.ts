@@ -75,7 +75,21 @@ describe('refresh 端到端落库链路(真实 better-sqlite3,非 UI)', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  it('复用确实跳过解析:文件 size+mtime 未变时 reuse 命中,不重新读内容', async () => {
+  it('moves 表里有 done 记录的会话,刷新后 moved_flag 置真', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ref-'))
+    const db = openDb(':memory:')
+    writeSession(root, '/p', 's1', [line({ type: 'user', cwd: '/p', timestamp: 't', message: { content: 'x' } })])
+    writeSession(root, '/p', 's2', [line({ type: 'user', cwd: '/p', timestamp: 't', message: { content: 'y' } })])
+    // 记录一次 s1 的成功移动
+    const id = db.insertMove({ sessionId: 's1', projectName: '/p', sourceDirAbs: '/p', sourceFolder: '-p', sourceCwd: '/p', targetDirAbs: '/q', targetFolder: '-q', trashPath: '/t', claudeJsonUpdated: false })
+    db.updateMoveStatus(id, 'done')
+
+    await refresh(db, root)
+    const sessions = db.getSessions('/p')
+    expect((sessions.find((s: any) => s.session_id === 's1') as any).moved_flag).toBeTruthy()
+    expect((sessions.find((s: any) => s.session_id === 's2') as any).moved_flag).toBeFalsy()
+    rmSync(root, { recursive: true, force: true })
+  })
     const root = mkdtempSync(join(tmpdir(), 'ref-'))
     const db = openDb(':memory:')
     writeSession(root, '/p', 's1', [line({ type: 'user', cwd: '/p', timestamp: 't', message: { content: 'x' } })])

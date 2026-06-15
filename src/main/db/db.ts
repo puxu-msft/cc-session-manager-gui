@@ -48,6 +48,11 @@ export function openDb(file: string) {
         .run(status, extra?.rewrittenFieldCount ?? null, extra?.sidecarBytes ?? null, extra?.claudeJsonUpdated == null ? null : extra.claudeJsonUpdated ? 1 : 0, extra?.trashPath ?? null, id)
     },
     getMoves(): any[] { return db.prepare('SELECT * FROM moves ORDER BY id DESC').all() },
+    // 已成功移动(且未回滚)的会话 id 集合,用于在索引里标记"已移动"。
+    getMovedSessionIds(): Set<string> {
+      const rows = db.prepare("SELECT DISTINCT session_id FROM moves WHERE status='done'").all() as { session_id: string }[]
+      return new Set(rows.map((r) => r.session_id))
+    },
     getPendingMoves(): any[] { return db.prepare("SELECT * FROM moves WHERE status='pending'").all() },
     insertCwdChanges(moveId: number, rows: { fileRel: string; lineNo: number; oldCwd: string; newCwd: string }[]) {
       const stmt = db.prepare('INSERT INTO cwd_changes (move_id,file_rel,line_no,old_cwd,new_cwd) VALUES (?,?,?,?,?)')
