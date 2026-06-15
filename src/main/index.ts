@@ -3,6 +3,10 @@ import { join } from 'node:path'
 import { registerIpc, abortCurrentScan } from './ipc'
 import { closeDb } from './appState'
 
+// 显式设定应用名,确保 userData 落在 ~/.config/cc-move-session(而非 dev/未打包启动时回退的 "Electron")。
+// 必须在首次访问 app.getPath('userData') 之前调用。
+app.setName('cc-move-session')
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
