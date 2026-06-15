@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { RefreshProgress } from '@shared/types'
 const api = {
+  listSources: () => ipcRenderer.invoke('sources:list'),
+  getSource: () => ipcRenderer.invoke('source:get'),
+  setSource: (id: string) => ipcRenderer.invoke('source:set', id),
   getIndex: () => ipcRenderer.invoke('index:get'),
   getSessions: (p: string) => ipcRenderer.invoke('sessions:get', p),
   refresh: () => ipcRenderer.invoke('refresh:run'),

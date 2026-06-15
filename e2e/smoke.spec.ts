@@ -33,3 +33,24 @@ test('启动:window.api 完整、三栏渲染、右栏加载目录', async () =>
   // 3) 右栏不卡"加载中":真实拿到目录,出现 .(当前目录)行
   await expect(page.locator('.row-title', { hasText: '当前目录' }).first()).toBeVisible({ timeout: 15_000 })
 })
+
+test('WSL 下探测到本机+Windows 两个数据源,可切换', async () => {
+  app = await electron.launch({
+    args: ['out/main/index.js', '--no-sandbox'],
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '' },
+  })
+  const page = await app.firstWindow()
+
+  const sources = await page.evaluate(() => (window as any).api.listSources())
+  // 本机一定有;在 WSL 且 Windows 侧存在 .claude 时还会有 windows
+  expect(sources.some((s: any) => s.id === 'local')).toBe(true)
+  const hasWindows = sources.some((s: any) => s.id === 'windows')
+
+  if (hasWindows) {
+    // 源切换条出现两个按钮
+    await expect(page.locator('.sourcebar .src')).toHaveCount(sources.length)
+    // 切到 Windows,活动源变更
+    await page.locator('.sourcebar .src', { hasText: 'Windows' }).click()
+    await expect.poll(() => page.evaluate(() => (window as any).api.getSource())).toBe('windows')
+  }
+})

@@ -41,6 +41,12 @@ button.primary:disabled { background: #b9c6e6; cursor: not-allowed; }
 .sess-check { margin-top: 2px; pointer-events: none; flex: 0 0 auto; }
 .sess-body { min-width: 0; }
 .filter-input { margin: 6px 12px; padding: 5px 8px; font-size: 12px; border: 1px solid #ddd; border-radius: 5px; }
+.sourcebar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: #1f2937; color: #e5e7eb; font-size: 12px; }
+.src-label { opacity: .8; }
+.sourcebar .src { background: #374151; color: #e5e7eb; border: 1px solid #4b5563; padding: 3px 12px; border-radius: 5px; cursor: pointer; }
+.sourcebar .src.sel { background: #2563eb; border-color: #2563eb; color: #fff; }
+.sourcebar .src:disabled { opacity: .45; cursor: not-allowed; }
+.src-hint { margin-left: auto; opacity: .55; }
 .trash-summary { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #444; margin: 4px 0 10px; }
 .hist-actions { display: flex; gap: 6px; }
 button.danger { background: #fff; color: #b00020; border: 1px solid #f0b3b3; padding: 3px 8px; border-radius: 5px; cursor: pointer; font-size: 12px; }
