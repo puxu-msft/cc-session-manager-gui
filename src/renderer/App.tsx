@@ -32,7 +32,7 @@ export function App() {
         <SessionPane sessions={st.sessions} selected={st.selectedSessions} onToggle={toggle} />
         <FsBrowserPane listing={st.fsListing} target={st.targetDir} onBrowse={st.browse} onPickTarget={st.setTargetDir} />
       </div>
-      <MoveBar count={st.selectedSessions.size} target={st.targetDir} onMove={startMove} onRefresh={st.refresh} onHistory={() => setShowHistory(true)} />
+      <MoveBar count={st.selectedSessions.size} target={st.targetDir} refreshing={st.refreshing} progress={st.progress} onMove={startMove} onRefresh={st.refresh} onHistory={() => setShowHistory(true)} />
       {st.preview && <ConfirmModal preview={st.preview} onCancel={() => st.setPreview(null)} onConfirm={confirmMove} />}
       {showHistory && <HistoryView onClose={() => setShowHistory(false)} />}
     </div>

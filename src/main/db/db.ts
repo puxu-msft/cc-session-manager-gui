@@ -60,6 +60,7 @@ export function openDb(file: string) {
       tx()
     },
     transaction<T>(fn: () => T): T { return db.transaction(fn)() },
+    close() { db.close() },
   }
 }
 export type Db = ReturnType<typeof openDb>

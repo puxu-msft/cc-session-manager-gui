@@ -12,3 +12,8 @@ export function getEnv() {
   }
   return { db, projectsRoot: PROJECTS_ROOT(), claudeJsonPath: CLAUDE_JSON(), trashRoot: TRASH_ROOT() }
 }
+
+// 退出时优雅关闭 DB 连接(刷写 WAL、释放文件锁),避免遗留锁与异常退出。
+export function closeDb() {
+  if (db) { try { db.close() } catch { /* 已关闭或不可用,忽略 */ } }
+}
