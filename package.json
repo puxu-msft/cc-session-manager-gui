@@ -2,6 +2,7 @@
   "name": "cc-move-session",
   "version": "0.1.0",
   "description": "Move Claude Code sessions between projects",
+  "author": "cc-move-session",
   "main": "out/main/index.js",
   "type": "module",
   "scripts": {
@@ -11,7 +12,30 @@
     "postinstall": "electron-builder install-app-deps",
     "test": "node scripts/test-electron.mjs run",
     "test:watch": "node scripts/test-electron.mjs",
-    "test:coverage": "node scripts/test-electron.mjs run --coverage"
+    "test:coverage": "node scripts/test-electron.mjs run --coverage",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder",
+    "e2e": "npm run build && playwright test"
+  },
+  "build": {
+    "appId": "com.local.cc-move-session",
+    "productName": "cc-move-session",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**"
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    }
   },
   "license": "MIT",
   "dependencies": {
@@ -20,6 +44,7 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.9.3",
     "@types/react": "^19.2.17",

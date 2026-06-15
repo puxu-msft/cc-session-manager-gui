@@ -30,6 +30,10 @@ export function useAppState() {
   }, [])
   const pickProject = useCallback(async (p: string) => { setSelectedProject(p); setSelectedSessions(new Set()); setSessions(await window.api.getSessions(p)) }, [])
   const browse = useCallback(async (p: string) => { const l = await window.api.listDir(p); setFsPath(l.path); setFsListing(l) }, [])
+  const makeDir = useCallback(async (parent: string, name: string) => {
+    const l = await window.api.makeDir(parent, name)
+    setFsPath(l.path); setFsListing(l); setTargetDir(l.path)
+  }, [])
 
-  return { projects, selectedProject, sessions, selectedSessions, setSelectedSessions, fsPath, fsListing, targetDir, setTargetDir, preview, setPreview, refreshing, progress, loadIndex, refresh, pickProject, browse }
+  return { projects, selectedProject, sessions, selectedSessions, setSelectedSessions, fsPath, fsListing, targetDir, setTargetDir, preview, setPreview, refreshing, progress, loadIndex, refresh, pickProject, browse, makeDir }
 }

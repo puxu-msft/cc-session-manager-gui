@@ -6,12 +6,14 @@ interface FsBrowserPaneProps {
   target: string | null
   onBrowse: (path: string) => void
   onPickTarget: (path: string) => void
+  onMakeDir: (parent: string, name: string) => void
 }
 
-// 目录探索组件:快捷根(主目录/根)、可输入路径跳转、当前路径面包屑,以及子目录列表。
+// 目录探索组件:快捷根(主目录/根)、可输入路径跳转、新建文件夹、当前路径面包屑,以及子目录列表。
 // 列表首两项为 .(当前目录,单击即选为目标)与 ..(上级,单击返回);其后是各子目录(单击选为目标·双击进入)。
-export function FsBrowserPane({ listing, target, onBrowse, onPickTarget }: FsBrowserPaneProps) {
+export function FsBrowserPane({ listing, target, onBrowse, onPickTarget, onMakeDir }: FsBrowserPaneProps) {
   const [input, setInput] = useState('')
+  const [newName, setNewName] = useState('')
   useEffect(() => { if (listing?.path) setInput(listing.path) }, [listing?.path])
 
   const home = listing?.home ?? ''
@@ -39,6 +41,19 @@ export function FsBrowserPane({ listing, target, onBrowse, onPickTarget }: FsBro
             onChange={(e) => setInput(e.target.value)}
           />
           <button type="submit">跳转</button>
+        </form>
+        <form
+          className="fsbar-row"
+          onSubmit={(e) => { e.preventDefault(); const n = newName.trim(); if (n && path) { onMakeDir(path, n); setNewName('') } }}
+        >
+          <input
+            className="path-input"
+            value={newName}
+            placeholder="在当前目录新建文件夹…"
+            spellCheck={false}
+            onChange={(e) => setNewName(e.target.value)}
+          />
+          <button type="submit" disabled={!newName.trim() || !path}>＋ 新建</button>
         </form>
         <div className="crumb">
           <span className="crumb-seg" onClick={() => onBrowse('/')}>/</span>

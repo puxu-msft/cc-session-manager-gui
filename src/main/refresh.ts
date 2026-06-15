@@ -9,9 +9,10 @@ export interface ExistingRow { session_id: string; size_bytes: number; mtime: nu
 // 抽成纯函数(不依赖 Electron/IPC),供 ipc 的 refresh:run 与集成测试共用,避免测试与生产代码走样。
 export function applyScanToIndex(db: Db, scan: ScanResult, existing: ExistingRow[]): IndexDiff {
   const diff = diffSessions(scan.sessions, existing)
+  const movedIds = db.getMovedSessionIds()
   db.transaction(() => {
     for (const p of scan.projects) db.upsertProject(p)
-    for (const s of scan.sessions) db.upsertSession({ ...s, movedFlag: false, lastMoveId: null })
+    for (const s of scan.sessions) db.upsertSession({ ...s, movedFlag: movedIds.has(s.sessionId), lastMoveId: null })
     for (const id of diff.removed) db.deleteSession(id)
   })
   return diff

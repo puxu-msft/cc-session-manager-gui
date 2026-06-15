@@ -18,9 +18,12 @@ export function App() {
     if (next.has(id)) next.delete(id); else next.add(id)
     st.setSelectedSessions(next)
   }
-  const toggleAll = () => {
-    if (st.selectedSessions.size === st.sessions.length) st.setSelectedSessions(new Set())
-    else st.setSelectedSessions(new Set(st.sessions.map((s) => s.session_id)))
+  const toggleAll = (ids: string[]) => {
+    const allSelected = ids.length > 0 && ids.every((id) => st.selectedSessions.has(id))
+    const next = new Set(st.selectedSessions)
+    if (allSelected) ids.forEach((id) => next.delete(id))
+    else ids.forEach((id) => next.add(id))
+    st.setSelectedSessions(next)
   }
   const startMove = async () => st.setPreview(await window.api.previewMove([...st.selectedSessions], st.targetDir!))
   const confirmMove = async () => {
@@ -34,7 +37,7 @@ export function App() {
       <div className="cols">
         <DirectoryPane projects={st.projects} selected={st.selectedProject} onPick={st.pickProject} />
         <SessionPane sessions={st.sessions} selected={st.selectedSessions} onToggle={toggle} onToggleAll={toggleAll} />
-        <FsBrowserPane listing={st.fsListing} target={st.targetDir} onBrowse={st.browse} onPickTarget={st.setTargetDir} />
+        <FsBrowserPane listing={st.fsListing} target={st.targetDir} onBrowse={st.browse} onPickTarget={st.setTargetDir} onMakeDir={st.makeDir} />
       </div>
       <MoveBar count={st.selectedSessions.size} target={st.targetDir} refreshing={st.refreshing} progress={st.progress} onMove={startMove} onRefresh={st.refresh} onHistory={() => setShowHistory(true)} />
       {st.preview && <ConfirmModal preview={st.preview} onCancel={() => st.setPreview(null)} onConfirm={confirmMove} />}

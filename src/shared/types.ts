@@ -65,4 +65,7 @@ export interface FsListing { path: string; parent: string | null; entries: FsEnt
 // 刷新索引时的进度上报(主进程 → 渲染进程)
 export interface RefreshProgress { done: number; total: number; path: string }
 
+// 回收区占用:总字节 + 每条移动(以 moveId 为 key)的备份字节
+export interface TrashUsage { total: number; byMove: Record<string, number> }
+
 declare global { interface Window { api: import('../preload/index').Api } }

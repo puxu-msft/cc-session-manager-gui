@@ -1,11 +1,13 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { mkdirSync } from 'node:fs'
 import { Worker } from 'node:worker_threads'
 import type { SessionMeta, ProjectMeta } from '@shared/types'
 import { getEnv } from './appState'
 import { applyScanToIndex } from './refresh'
 import { listDir } from './core/fsBrowser'
+import { trashUsage, purgeMove, purgeAllTrash } from './trash'
 import { previewMove, executeMove, reconcile, undoMove } from './core/mover'
 
 // 进行中的扫描 worker:刷新可被新刷新抢占,退出时也会被终止,确保主进程不被长扫描卡住、退出不被阻塞。
@@ -65,9 +67,19 @@ export function registerIpc(): void {
   })
 
   ipcMain.handle('fs:list', (_e, path: string) => listDir(path || homedir()))
+  ipcMain.handle('fs:mkdir', (_e, parent: string, name: string) => {
+    const p = join(parent, name)
+    mkdirSync(p, { recursive: true })
+    return listDir(p)
+  })
   ipcMain.handle('move:preview', (_e, ids: string[], target: string) => previewMove(ids, target, env as any))
   ipcMain.handle('move:execute', (_e, ids: string[], target: string) => executeMove(ids, target, env as any))
   ipcMain.handle('moves:list', () => env.db.getMoves())
   ipcMain.handle('move:undo', (_e, moveId: number) => { undoMove(moveId, env as any); return env.db.getMoves() })
+  ipcMain.handle('trash:usage', () => trashUsage(env.trashRoot))
+  ipcMain.handle('trash:purge', (_e, moveId?: number) => {
+    if (moveId == null) purgeAllTrash(env.trashRoot); else purgeMove(env.trashRoot, moveId)
+    return { moves: env.db.getMoves(), usage: trashUsage(env.trashRoot) }
+  })
 }
 
