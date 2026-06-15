@@ -1,6 +1,7 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { mkdirSync } from 'node:fs'
 import { Worker } from 'node:worker_threads'
 import type { SessionMeta, ProjectMeta } from '@shared/types'
 import { getEnv } from './appState'
@@ -65,6 +66,11 @@ export function registerIpc(): void {
   })
 
   ipcMain.handle('fs:list', (_e, path: string) => listDir(path || homedir()))
+  ipcMain.handle('fs:mkdir', (_e, parent: string, name: string) => {
+    const p = join(parent, name)
+    mkdirSync(p, { recursive: true })
+    return listDir(p)
+  })
   ipcMain.handle('move:preview', (_e, ids: string[], target: string) => previewMove(ids, target, env as any))
   ipcMain.handle('move:execute', (_e, ids: string[], target: string) => executeMove(ids, target, env as any))
   ipcMain.handle('moves:list', () => env.db.getMoves())

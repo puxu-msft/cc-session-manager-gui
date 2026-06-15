@@ -5,6 +5,7 @@ const api = {
   getSessions: (p: string) => ipcRenderer.invoke('sessions:get', p),
   refresh: () => ipcRenderer.invoke('refresh:run'),
   listDir: (p: string) => ipcRenderer.invoke('fs:list', p),
+  makeDir: (parent: string, name: string) => ipcRenderer.invoke('fs:mkdir', parent, name),
   previewMove: (ids: string[], t: string) => ipcRenderer.invoke('move:preview', ids, t),
   executeMove: (ids: string[], t: string) => ipcRenderer.invoke('move:execute', ids, t),
   listMoves: () => ipcRenderer.invoke('moves:list'),
