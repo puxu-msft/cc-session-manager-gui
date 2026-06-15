@@ -55,7 +55,10 @@ export function registerIpc(): void {
     const existing = env.db.raw.prepare('SELECT * FROM sessions').all() as any[]
     const { projects, sessions, aborted } = await runScanWorker(env.projectsRoot, existing, event)
     if (aborted) {
-      return { projects: env.db.getProjects(), diff: { added: [], removed: [], changed: [] }, aborted: true }
+      // 退出时会先关闭 DB 再让在飞的刷新走到这里;此时读库可能抛 use-after-close,容错返回空,保证退出无噪声。
+      let current: ProjectMeta[] = []
+      try { current = env.db.getProjects() } catch { /* DB 可能已在退出时关闭 */ }
+      return { projects: current, diff: { added: [], removed: [], changed: [] }, aborted: true }
     }
     const diff = diffSessions(sessions, existing.map((r) => ({ session_id: r.session_id, size_bytes: r.size_bytes, mtime: r.mtime })))
     env.db.transaction(() => {
