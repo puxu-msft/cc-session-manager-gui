@@ -16,7 +16,6 @@ function createWindow() {
   if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else win.loadFile(join(__dirname, '../renderer/index.html'))
 }
-}
 
 app.whenReady().then(() => { registerIpc(); createWindow() })
 app.on('window-all-closed', () => {
