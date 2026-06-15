@@ -21,7 +21,9 @@ export default defineConfig({
     resolve: { alias: { '@shared': resolve('src/shared') } },
     build: {
       rollupOptions: {
-        output: { format: 'cjs', entryFileNames: '[name].js' },
+        // 项目是 "type":"module",.js 会被当 ESM 解析,而 preload 是 CJS(用 require)。
+        // 故输出为 .cjs,让运行时无歧义按 CommonJS 加载,避免 "require is not defined in ES module scope"。
+        output: { format: 'cjs', entryFileNames: '[name].cjs' },
       },
     },
   },
