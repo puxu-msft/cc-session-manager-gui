@@ -68,4 +68,7 @@ export interface RefreshProgress { done: number; total: number; path: string }
 // 回收区占用:总字节 + 每条移动(以 moveId 为 key)的备份字节
 export interface TrashUsage { total: number; byMove: Record<string, number> }
 
+// 数据源(本机 / Windows)在渲染层的展示信息
+export interface SourceInfo { id: string; label: string; projectsRoot: string; exists: boolean }
+
 declare global { interface Window { api: import('../preload/index').Api } }

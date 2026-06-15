@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { Worker } from 'node:worker_threads'
 import type { SessionMeta, ProjectMeta } from '@shared/types'
-import { getEnv } from './appState'
+import { getEnv, listSources, getActiveSourceId, setActiveSourceId } from './appState'
 import { applyScanToIndex } from './refresh'
 import { listDir } from './core/fsBrowser'
 import { trashUsage, purgeMove, purgeAllTrash } from './trash'
@@ -47,19 +47,29 @@ function runScanWorker(projectsRoot: string, existingRows: unknown[], event: Ipc
 }
 
 export function registerIpc(): void {
-  const env = getEnv()
-  reconcile(env as any)
+  reconcile(getEnv() as any) // 启动时收尾当前活动源的 pending 移动
 
-  ipcMain.handle('index:get', () => ({ projects: env.db.getProjects() }))
-  ipcMain.handle('sessions:get', (_e, projectPathAbs: string) => env.db.getSessions(projectPathAbs))
+  ipcMain.handle('sources:list', () => listSources().map((s) => ({ id: s.id, label: s.label, projectsRoot: s.projectsRoot, exists: s.exists })))
+  ipcMain.handle('source:get', () => getActiveSourceId())
+  ipcMain.handle('source:set', (_e, id: string) => {
+    abortCurrentScan()
+    const active = setActiveSourceId(id)
+    const env = getEnv()
+    reconcile(env as any)
+    return { active, projects: env.db.getProjects() }
+  })
+
+  ipcMain.handle('index:get', () => ({ projects: getEnv().db.getProjects() }))
+  ipcMain.handle('sessions:get', (_e, projectPathAbs: string) => getEnv().db.getSessions(projectPathAbs))
 
   ipcMain.handle('refresh:run', async (event: IpcMainInvokeEvent) => {
+    const env = getEnv()
     const existing = env.db.raw.prepare('SELECT * FROM sessions').all() as any[]
     const { projects, sessions, aborted } = await runScanWorker(env.projectsRoot, existing, event)
     if (aborted) {
-      // 退出时会先关闭 DB 再让在飞的刷新走到这里;此时读库可能抛 use-after-close,容错返回空,保证退出无噪声。
+      // 退出/切源时会先中断,在飞刷新走到这里读库可能抛 use-after-close,容错返回空。
       let current: ProjectMeta[] = []
-      try { current = env.db.getProjects() } catch { /* DB 可能已在退出时关闭 */ }
+      try { current = env.db.getProjects() } catch { /* DB 可能已关闭 */ }
       return { projects: current, diff: { added: [], removed: [], changed: [] }, aborted: true }
     }
     const diff = applyScanToIndex(env.db, { projects, sessions }, existing.map((r) => ({ session_id: r.session_id, size_bytes: r.size_bytes, mtime: r.mtime })))
@@ -72,12 +82,13 @@ export function registerIpc(): void {
     mkdirSync(p, { recursive: true })
     return listDir(p)
   })
-  ipcMain.handle('move:preview', (_e, ids: string[], target: string) => previewMove(ids, target, env as any))
-  ipcMain.handle('move:execute', (_e, ids: string[], target: string) => executeMove(ids, target, env as any))
-  ipcMain.handle('moves:list', () => env.db.getMoves())
-  ipcMain.handle('move:undo', (_e, moveId: number) => { undoMove(moveId, env as any); return env.db.getMoves() })
-  ipcMain.handle('trash:usage', () => trashUsage(env.trashRoot))
+  ipcMain.handle('move:preview', (_e, ids: string[], target: string) => previewMove(ids, target, getEnv() as any))
+  ipcMain.handle('move:execute', (_e, ids: string[], target: string) => executeMove(ids, target, getEnv() as any))
+  ipcMain.handle('moves:list', () => getEnv().db.getMoves())
+  ipcMain.handle('move:undo', (_e, moveId: number) => { const env = getEnv(); undoMove(moveId, env as any); return env.db.getMoves() })
+  ipcMain.handle('trash:usage', () => trashUsage(getEnv().trashRoot))
   ipcMain.handle('trash:purge', (_e, moveId?: number) => {
+    const env = getEnv()
     if (moveId == null) purgeAllTrash(env.trashRoot); else purgeMove(env.trashRoot, moveId)
     return { moves: env.db.getMoves(), usage: trashUsage(env.trashRoot) }
   })

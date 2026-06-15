@@ -11,7 +11,7 @@ import './styles.css'
 export function App() {
   const st = useAppState()
   const [showHistory, setShowHistory] = useState(false)
-  useEffect(() => { st.loadIndex(); st.browse('') }, [])
+  useEffect(() => { st.loadSources(); st.loadIndex(); st.browse('') }, [])
 
   const toggle = (id: string) => {
     const next = new Set(st.selectedSessions)
@@ -34,6 +34,23 @@ export function App() {
 
   return (
     <div className="app">
+      {st.sources.length > 1 && (
+        <div className="sourcebar">
+          <span className="src-label">数据源</span>
+          {st.sources.map((s) => (
+            <button
+              key={s.id}
+              className={s.id === st.activeSource ? 'src sel' : 'src'}
+              disabled={!s.exists || st.refreshing}
+              onClick={() => st.switchSource(s.id)}
+              title={s.projectsRoot + (s.exists ? '' : '(不存在)')}
+            >
+              {s.label}{s.exists ? '' : '(无)'}
+            </button>
+          ))}
+          <span className="src-hint">各数据源使用独立索引</span>
+        </div>
+      )}
       <div className="cols">
         <DirectoryPane projects={st.projects} selected={st.selectedProject} onPick={st.pickProject} />
         <SessionPane sessions={st.sessions} selected={st.selectedSessions} onToggle={toggle} onToggleAll={toggleAll} />

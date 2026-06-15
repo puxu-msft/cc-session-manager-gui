@@ -24,6 +24,10 @@ npm run rebuild          # 手动把原生模块重建为 Electron ABI
 
 界面:左栏按路径聚合的项目(可过滤)、中栏会话(显式复选框、可过滤、可全选)、右栏完整目录浏览器(快捷根/路径输入/新建文件夹/`.`·`..` 导航)。底部刷新带进度;历史视图可撤销移动、查看回收区占用并手动清理。
 
+## 数据源(WSL)
+
+在 WSL 中运行时,程序会探测到两套 Claude Code 存储:**WSL (Linux)** 侧 `~/.claude/projects`,与 **Windows** 侧 `/mnt/c/Users/<用户>/.claude/projects`(经 `cmd.exe` 取 `%USERPROFILE%`,失败则扫描 `/mnt/c/Users`)。顶部数据源切换条可二选一;**两套使用各自独立的 sqlite 索引**(`index-local.db` / `index-windows.db`),互不混淆。非 WSL 环境只有本机一个源,切换条隐藏。
+
 核心逻辑模块(`src/main/core/**`、`src/main/db/**`)可独立单元测试;UI 组件、IPC、Electron 运行时胶水层不通过测试覆盖。
 
 ### 原生模块与测试运行时

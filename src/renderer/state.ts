@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import type { MovePreview, RefreshProgress } from '@shared/types'
+import type { MovePreview, RefreshProgress, SourceInfo } from '@shared/types'
 
 export function useAppState() {
   const [projects, setProjects] = useState<any[]>([])
@@ -12,6 +12,19 @@ export function useAppState() {
   const [preview, setPreview] = useState<MovePreview | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [progress, setProgress] = useState<RefreshProgress | null>(null)
+  const [sources, setSources] = useState<SourceInfo[]>([])
+  const [activeSource, setActiveSource] = useState<string>('')
+
+  const loadSources = useCallback(async () => {
+    setSources(await window.api.listSources())
+    setActiveSource(await window.api.getSource())
+  }, [])
+  const switchSource = useCallback(async (id: string) => {
+    const r = await window.api.setSource(id)
+    setActiveSource(r.active)
+    setProjects(r.projects)
+    setSelectedProject(null); setSessions([]); setSelectedSessions(new Set())
+  }, [])
 
   const loadIndex = useCallback(async () => setProjects((await window.api.getIndex()).projects), [])
   const refresh = useCallback(async () => {
@@ -35,5 +48,5 @@ export function useAppState() {
     setFsPath(l.path); setFsListing(l); setTargetDir(l.path)
   }, [])
 
-  return { projects, selectedProject, sessions, selectedSessions, setSelectedSessions, fsPath, fsListing, targetDir, setTargetDir, preview, setPreview, refreshing, progress, loadIndex, refresh, pickProject, browse, makeDir }
+  return { projects, selectedProject, sessions, selectedSessions, setSelectedSessions, fsPath, fsListing, targetDir, setTargetDir, preview, setPreview, refreshing, progress, sources, activeSource, loadSources, switchSource, loadIndex, refresh, pickProject, browse, makeDir }
 }
