@@ -19,3 +19,13 @@ export function rowToSessionMeta(row: SessionRowShape): SessionMeta {
     distinctCwds: row.cwd ? [row.cwd] : [], hasSidecar: !!row.has_sidecar, subagentCount: row.subagent_count, toolResultsBytes: row.tool_results_bytes,
   }
 }
+
+// 由 DB 现有行构造 scanAll 的 reuse 回调:文件 size+mtime 与索引一致则复用元数据、跳过解析。
+// 供扫描 worker 与集成测试共用,确保两者走同一复用逻辑。
+export function buildReuse(rows: SessionRowShape[]): (id: string, size: number, mtime: number) => SessionMeta | null {
+  const byId = new Map(rows.map((r) => [r.session_id, r]))
+  return (id, size, mtime) => {
+    const r = byId.get(id)
+    return r && r.size_bytes === size && r.mtime === mtime ? rowToSessionMeta(r) : null
+  }
+}

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import type { SessionMeta, ProjectMeta } from '@shared/types'
 import { getEnv } from './appState'
-import { diffSessions } from './core/scanner'
+import { applyScanToIndex } from './refresh'
 import { listDir } from './core/fsBrowser'
 import { previewMove, executeMove, reconcile, undoMove } from './core/mover'
 
@@ -60,12 +60,7 @@ export function registerIpc(): void {
       try { current = env.db.getProjects() } catch { /* DB 可能已在退出时关闭 */ }
       return { projects: current, diff: { added: [], removed: [], changed: [] }, aborted: true }
     }
-    const diff = diffSessions(sessions, existing.map((r) => ({ session_id: r.session_id, size_bytes: r.size_bytes, mtime: r.mtime })))
-    env.db.transaction(() => {
-      for (const p of projects) env.db.upsertProject(p)
-      for (const s of sessions) env.db.upsertSession({ ...s, movedFlag: false, lastMoveId: null })
-      for (const id of diff.removed) env.db.deleteSession(id)
-    })
+    const diff = applyScanToIndex(env.db, { projects, sessions }, existing.map((r) => ({ session_id: r.session_id, size_bytes: r.size_bytes, mtime: r.mtime })))
     return { projects: env.db.getProjects(), diff, aborted: false }
   })
 
