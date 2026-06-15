@@ -43,9 +43,9 @@ export function openDb(file: string) {
         .run({ ...m, claudeJsonUpdated: m.claudeJsonUpdated ? 1 : 0, now: now() })
       return Number(r.lastInsertRowid)
     },
-    updateMoveStatus(id: number, status: string, extra?: { rewrittenFieldCount?: number; sidecarBytes?: number; claudeJsonUpdated?: boolean }) {
-      db.prepare('UPDATE moves SET status=?, rewritten_field_count=COALESCE(?,rewritten_field_count), sidecar_bytes=COALESCE(?,sidecar_bytes), claude_json_updated=COALESCE(?,claude_json_updated) WHERE id=?')
-        .run(status, extra?.rewrittenFieldCount ?? null, extra?.sidecarBytes ?? null, extra?.claudeJsonUpdated == null ? null : extra.claudeJsonUpdated ? 1 : 0, id)
+    updateMoveStatus(id: number, status: string, extra?: { rewrittenFieldCount?: number; sidecarBytes?: number; claudeJsonUpdated?: boolean; trashPath?: string }) {
+      db.prepare('UPDATE moves SET status=?, rewritten_field_count=COALESCE(?,rewritten_field_count), sidecar_bytes=COALESCE(?,sidecar_bytes), claude_json_updated=COALESCE(?,claude_json_updated), trash_path=COALESCE(?,trash_path) WHERE id=?')
+        .run(status, extra?.rewrittenFieldCount ?? null, extra?.sidecarBytes ?? null, extra?.claudeJsonUpdated == null ? null : extra.claudeJsonUpdated ? 1 : 0, extra?.trashPath ?? null, id)
     },
     getMoves(): any[] { return db.prepare('SELECT * FROM moves ORDER BY id DESC').all() },
     getPendingMoves(): any[] { return db.prepare("SELECT * FROM moves WHERE status='pending'").all() },

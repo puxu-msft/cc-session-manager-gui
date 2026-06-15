@@ -68,8 +68,12 @@ export async function previewMove(sessionIds: string[], targetPath: string, env:
     const targetFolder = join(env.projectsRoot, encodePath(targetPath))
     if (!blocked && (existsSync(join(targetFolder, `${sessionId}.jsonl`)) || existsSync(join(targetFolder, sessionId)))) { blocked = 'collision'; blockReason = '目标已存在同会话' }
     if (!blocked && existsSync(targetFolder)) {
-      const someJsonl = readdirSync(targetFolder).find((f) => f.endsWith('.jsonl'))
-      if (someJsonl) { const m2 = await scanSessionFile(join(targetFolder, someJsonl)); if (m2.cwd && m2.cwd !== targetPath) { blocked = 'encode-collision'; blockReason = `目标文件夹已被 ${m2.cwd} 占用` } }
+      // 目标编码路径被普通文件占用属编码冲突,直接阻断而非让 readdirSync 抛 ENOTDIR 炸穿整批
+      if (!statSync(targetFolder).isDirectory()) { blocked = 'encode-collision'; blockReason = '目标文件夹路径被非目录文件占用' }
+      else {
+        const someJsonl = readdirSync(targetFolder).find((f) => f.endsWith('.jsonl'))
+        if (someJsonl) { const m2 = await scanSessionFile(join(targetFolder, someJsonl)); if (m2.cwd && m2.cwd !== targetPath) { blocked = 'encode-collision'; blockReason = `目标文件夹已被 ${m2.cwd} 占用` } }
+      }
     }
     if (!blocked && srcRoot === join(homedir(), '.claude')) { blocked = 'self-referential'; blockReason = '自引用 ~/.claude,需显式确认' }
 
@@ -124,6 +128,9 @@ export async function executeMove(sessionIds: string[], targetPath: string, env:
     const moveId = env.db.insertMove({ sessionId: item.sessionId, projectName: srcRoot, sourceDirAbs: srcRoot, sourceFolder: found.folder, sourceCwd: srcRoot, targetDirAbs: targetPath, targetFolder, trashPath: join(trashRoot, '0'), claudeJsonUpdated: false })
     const trashDir = join(trashRoot, String(moveId))
     const written: string[] = []
+    // 记录每一次破坏性的 verbatim 源→目标 rename(meta/tool-results/hooks/散落文件),
+    // 这些文件不进回收区(避免大文件复制两份),回滚时需逐个从目标搬回源
+    const movedVerbatim: { from: string; to: string }[] = []
     try {
       mkdirSync(targetFolder, { recursive: true }); mkdirSync(trashDir, { recursive: true })
       const allChanges: any[] = [], allSnap: any[] = []
@@ -134,21 +141,31 @@ export async function executeMove(sessionIds: string[], targetPath: string, env:
 
       const srcSidecar = join(found.folder, item.sessionId)
       const dstSidecar = join(targetFolder, item.sessionId)
+      // subagent jsonl 为改写写入(原件留在源,稍后随 srcSidecar 整体进回收区);verbatim 文件先不动
       if (existsSync(srcSidecar)) {
         const subSrc = join(srcSidecar, 'subagents')
-        if (existsSync(subSrc)) for (const f of readdirSync(subSrc)) {
+        if (existsSync(subSrc)) for (const f of readdirSync(subSrc)) if (f.endsWith('.jsonl')) {
           const sp = join(subSrc, f), dp = join(dstSidecar, 'subagents', f)
-          if (f.endsWith('.jsonl')) { const r = await rewriteFileToTarget(sp, dp, `${item.sessionId}/subagents/${f}`, srcRoot, targetPath); written.push(dp); allChanges.push(...r.changes); allSnap.push(...r.snapshot) }
-          else { mkdirSync(dirname(dp), { recursive: true }); renameSync(sp, dp) }
+          const r = await rewriteFileToTarget(sp, dp, `${item.sessionId}/subagents/${f}`, srcRoot, targetPath); written.push(dp); allChanges.push(...r.changes); allSnap.push(...r.snapshot)
+        }
+      }
+
+      // 先校验目标主文件写入,再进行任何破坏性的源→目标搬移(绝不在目标校验前移动源 verbatim 文件)
+      if (!existsSync(mainTarget)) throw new Error('目标写入校验失败')
+
+      // verbatim 源→目标搬移:subagents 下的非 jsonl(meta 等)+ tool-results/hooks 子目录 + 顶层散落文件
+      if (existsSync(srcSidecar)) {
+        const subSrc = join(srcSidecar, 'subagents')
+        if (existsSync(subSrc)) for (const f of readdirSync(subSrc)) if (!f.endsWith('.jsonl')) {
+          const sp = join(subSrc, f), dp = join(dstSidecar, 'subagents', f)
+          mkdirSync(dirname(dp), { recursive: true }); renameSync(sp, dp); movedVerbatim.push({ from: sp, to: dp })
         }
         for (const sub of ['tool-results', 'hooks']) {
           const d = join(srcSidecar, sub)
-          if (existsSync(d)) { mkdirSync(dstSidecar, { recursive: true }); renameSync(d, join(dstSidecar, sub)) }
+          if (existsSync(d)) { mkdirSync(dstSidecar, { recursive: true }); const to = join(dstSidecar, sub); renameSync(d, to); movedVerbatim.push({ from: d, to }) }
         }
-        for (const e of readdirSync(srcSidecar, { withFileTypes: true })) if (e.isFile()) { mkdirSync(dstSidecar, { recursive: true }); renameSync(join(srcSidecar, e.name), join(dstSidecar, e.name)) }
+        for (const e of readdirSync(srcSidecar, { withFileTypes: true })) if (e.isFile()) { mkdirSync(dstSidecar, { recursive: true }); const from = join(srcSidecar, e.name), to = join(dstSidecar, e.name); renameSync(from, to); movedVerbatim.push({ from, to }) }
       }
-
-      if (!existsSync(mainTarget)) throw new Error('目标写入校验失败')
 
       renameSync(found.jsonl, join(trashDir, `${item.sessionId}.jsonl`))
       if (existsSync(srcSidecar)) renameSync(srcSidecar, join(trashDir, item.sessionId))
@@ -156,9 +173,14 @@ export async function executeMove(sessionIds: string[], targetPath: string, env:
       env.db.insertCwdChanges(moveId, allChanges)
       if (allSnap.length) env.db.insertSnapshotLines(moveId, allSnap)
       const added = ensureProjectEntry(claudeJsonPath, targetPath, srcRoot)
-      env.db.updateMoveStatus(moveId, 'done', { rewrittenFieldCount: allChanges.length, sidecarBytes: item.sidecarBytes, claudeJsonUpdated: added })
+      env.db.updateMoveStatus(moveId, 'done', { rewrittenFieldCount: allChanges.length, sidecarBytes: item.sidecarBytes, claudeJsonUpdated: added, trashPath: trashDir })
       results.push({ sessionId: item.sessionId, status: 'done', moveId })
     } catch (e: any) {
+      // 先把已搬到目标的 verbatim 文件搬回源(它们是 move 而非 copy,目标是唯一副本),
+      // 必须在 rmSync 目标 sidecar 前完成,否则唯一副本被删除导致数据丢失
+      for (const mv of movedVerbatim) {
+        try { if (existsSync(mv.to) && !existsSync(mv.from)) { mkdirSync(dirname(mv.from), { recursive: true }); renameSync(mv.to, mv.from) } } catch {}
+      }
       for (const w of written) try { rmSync(w, { force: true }) } catch {}
       try { rmSync(join(targetFolder, item.sessionId), { recursive: true, force: true }) } catch {}
       const trashedMain = join(trashDir, `${item.sessionId}.jsonl`)
