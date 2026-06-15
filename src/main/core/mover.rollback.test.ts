@@ -63,6 +63,37 @@ describe('executeMove 回滚保护 verbatim sidecar (BUG 1)', () => {
   })
 })
 
+describe('executeMove 回滚保护 已入回收区的源会话 (BUG 失败发生在源入回收区之后)', () => {
+  it('ensureProjectEntry 抛错时,源主文件+完整 sidecar(subagents+meta+verbatim)全部还原、回收区清空、状态 failed', async () => {
+    const w = world(); const db = openDb(':memory:')
+    // 让 ~/.claude.json 路径是一个目录:existsSync 为真但 readFileSync(dir) 抛 EISDIR,
+    // 使 ensureProjectEntry 在源主文件与源 sidecar 已搬入回收区之后才抛错(step 6 失败窗口)
+    const claudeJsonDir = join(w.home, '.claude.json'); mkdirSync(claudeJsonDir, { recursive: true })
+
+    const res = await executeMove(['s1'], w.dst, { projectsRoot: w.projects, trashRoot: w.trash, claudeJsonPath: claudeJsonDir, db })
+    expect(res[0].status).toBe('failed')
+
+    // 源会话必须完整还原:主文件 + 全部 sidecar 内容(含 subagent jsonl + meta + verbatim)
+    expect(existsSync(w.jsonl)).toBe(true)
+    expect(existsSync(join(w.sidecar, 'subagents', 'agent-x.jsonl'))).toBe(true)
+    expect(existsSync(join(w.sidecar, 'subagents', 'agent-x.meta.json'))).toBe(true)
+    expect(existsSync(join(w.sidecar, 'tool-results', 'r.txt'))).toBe(true)
+    expect(existsSync(join(w.sidecar, 'hooks', 'h.txt'))).toBe(true)
+    expect(existsSync(join(w.sidecar, 'stray.bin'))).toBe(true)
+
+    // 目标 sidecar 不留半成品
+    expect(existsSync(join(w.projects, encodePath(w.dst), 's1'))).toBe(false)
+
+    // 回收区本次 move 已清空:不得有遗留的 subagent jsonl/meta 被孤立在回收区
+    const trashDir = join(w.trash, String(res[0].moveId))
+    expect(existsSync(join(trashDir, 's1'))).toBe(false)
+    expect(existsSync(join(trashDir, 's1.jsonl'))).toBe(false)
+
+    const m = db.getMoves().find((x) => x.id === res[0].moveId)
+    expect(m.status).toBe('failed')
+  })
+})
+
 describe('previewMove 容错非目录目标 (BUG 2)', () => {
   it('目标编码文件夹路径被普通文件占用时不抛错,返回结果且源不动', async () => {
     const w = world(); const db = openDb(':memory:')

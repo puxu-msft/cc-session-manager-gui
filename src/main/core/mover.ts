@@ -176,17 +176,21 @@ export async function executeMove(sessionIds: string[], targetPath: string, env:
       env.db.updateMoveStatus(moveId, 'done', { rewrittenFieldCount: allChanges.length, sidecarBytes: item.sidecarBytes, claudeJsonUpdated: added, trashPath: trashDir })
       results.push({ sessionId: item.sessionId, status: 'done', moveId })
     } catch (e: any) {
-      // 先把已搬到目标的 verbatim 文件搬回源(它们是 move 而非 copy,目标是唯一副本),
-      // 必须在 rmSync 目标 sidecar 前完成,否则唯一副本被删除导致数据丢失
-      for (const mv of movedVerbatim) {
-        try { if (existsSync(mv.to) && !existsSync(mv.from)) { mkdirSync(dirname(mv.from), { recursive: true }); renameSync(mv.to, mv.from) } } catch {}
-      }
-      for (const w of written) try { rmSync(w, { force: true }) } catch {}
-      try { rmSync(join(targetFolder, item.sessionId), { recursive: true, force: true }) } catch {}
+      // 回滚顺序必须与失败发生的位置无关:无论失败在源入回收区之前还是之后,都要让源会话完整复原。
+      // 1) 先把已入回收区的原件搬回源——主 jsonl 与整目录的源 sidecar(含原始 subagent jsonl + meta)。
+      //    必须先于 verbatim 还原:否则 verbatim 还原会 mkdirSync 重建源 sidecar 目录,使本步的"源 sidecar 不存在"守卫失效,把原始 subagent/meta 永久遗弃在回收区。
       const trashedMain = join(trashDir, `${item.sessionId}.jsonl`)
       if (existsSync(trashedMain) && !existsSync(found.jsonl)) renameSync(trashedMain, found.jsonl)
       const trashedSidecar = join(trashDir, item.sessionId)
       if (existsSync(trashedSidecar) && !existsSync(join(found.folder, item.sessionId))) renameSync(trashedSidecar, join(found.folder, item.sessionId))
+      // 2) 再把已搬到目标的 verbatim 文件搬回源(它们是 move 而非 copy,目标是唯一副本)。
+      //    此时源 sidecar 已由第 1 步整目录还原,verbatim 文件路径(tool-results/hooks/散落文件)与之互不重叠,直接归位;即便源 sidecar 不存在,mkdirSync 也会重建,容错。
+      for (const mv of movedVerbatim) {
+        try { if (existsSync(mv.to) && !existsSync(mv.from)) { mkdirSync(dirname(mv.from), { recursive: true }); renameSync(mv.to, mv.from) } } catch {}
+      }
+      // 3) 最后清理半成品目标:已写入的改写 jsonl(主 + subagent)与已被抽干 verbatim 的目标 sidecar 目录
+      for (const w of written) try { rmSync(w, { force: true }) } catch {}
+      try { rmSync(join(targetFolder, item.sessionId), { recursive: true, force: true }) } catch {}
       env.db.updateMoveStatus(moveId, 'failed')
       results.push({ sessionId: item.sessionId, status: 'failed', moveId, error: String(e?.message ?? e) })
     }
