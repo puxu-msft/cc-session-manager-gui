@@ -7,8 +7,11 @@
   "scripts": {
     "dev": "ELECTRON_RUN_AS_NODE= electron-vite dev",
     "build": "electron-vite build",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "rebuild": "electron-builder install-app-deps",
+    "postinstall": "electron-builder install-app-deps",
+    "test": "node scripts/test-electron.mjs run",
+    "test:watch": "node scripts/test-electron.mjs",
+    "test:coverage": "node scripts/test-electron.mjs run --coverage"
   },
   "license": "MIT",
   "dependencies": {

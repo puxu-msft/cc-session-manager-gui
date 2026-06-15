@@ -11,13 +11,24 @@ Claude Code 把每个会话存为 `~/.claude/projects/<编码后的cwd>/<session
 ## 开发
 
 ```bash
+npm install              # 安装依赖;postinstall 会把原生模块按 Electron ABI 重建
 npm run dev              # 启动 Electron 应用(electron-vite dev)
 npm run build            # 生产构建(electron-vite build)
-npm run test             # 运行单元测试(vitest run)
-npx vitest run --coverage  # 带覆盖率运行,聚焦核心逻辑模块
+npm test                 # 运行单元测试(见下方"测试运行时")
+npm run test:coverage    # 带覆盖率运行,聚焦核心逻辑模块
+npm run rebuild          # 手动把原生模块重建为 Electron ABI(electron-builder install-app-deps)
 ```
 
-核心逻辑模块(`src/main/core/**`、`src/main/db/**`)是纯 Node 逻辑,可独立单元测试;UI 组件、IPC、Electron 运行时胶水层不通过 vitest 覆盖。
+核心逻辑模块(`src/main/core/**`、`src/main/db/**`)可独立单元测试;UI 组件、IPC、Electron 运行时胶水层不通过测试覆盖。
+
+### 原生模块与测试运行时
+
+本工具用 `better-sqlite3`(原生模块)。Electron 自带的 Node 与系统 Node 的 ABI(`NODE_MODULE_VERSION`)不同,且 Electron 的 ABI 不对应任何独立发布的 Node 版本,无法靠升级系统 Node 对齐。因此本项目只保留**一份按 Electron ABI 编译**的 `better-sqlite3`,并让测试也跑在 **Electron 的 Node 运行时**上(`scripts/test-electron.mjs` 用 `ELECTRON_RUN_AS_NODE=1` 以 electron 二进制当 node 启动 vitest)。这样 app 与测试共用同一 ABI,无需在两套构建之间来回重建。
+
+新克隆首次 `npm install` 时,`postinstall`(`electron-builder install-app-deps`)会为 Electron 重建 `better-sqlite3`;该模块没有现成的 Electron 预编译件,需本地编译(约 1~2 分钟,依赖 python3 / make / g++)。
+
+WSL 注意:若从 Windows 经 `WSLENV` 泄漏了 `ELECTRON_RUN_AS_NODE=1`,会让 `npm run dev` 启动的 electron 以 node 模式运行而不弹窗;`dev` 脚本已在启动前清空该变量(注意须清空或 unset,设为 `0` 无效)。
+
 
 ## 安全提示(重要)
 
