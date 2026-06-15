@@ -1,12 +1,14 @@
-import { statSync, existsSync, readdirSync, createReadStream, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { statSync, existsSync, readdirSync, createReadStream, readFileSync, mkdirSync, renameSync, createWriteStream, rmSync } from 'node:fs'
+import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { createInterface } from 'node:readline'
-import type { MovePreview, MovePreviewItem } from '@shared/types'
+import type { MovePreview, MovePreviewItem, MoveResult } from '@shared/types'
 import { encodePath } from './pathCodec'
 import { scanSessionFile } from './jsonlScanner'
 import { rewriteLine } from './cwdRewriter'
-import { LIVE_MTIME_THRESHOLD_MS, CLAUDE_JSON } from '@shared/constants'
+import { ensureProjectEntry, removeProjectEntry } from './claudeJson'
+import { LIVE_MTIME_THRESHOLD_MS, CLAUDE_JSON, SNAPSHOT_LINE_SIZE_CAP_BYTES, TRASH_ROOT } from '@shared/constants'
+import type { Db } from '../db/db'
 
 // 移动运行环境:projectsRoot 为 ~/.claude/projects;claudeJsonPath 可注入以便测试,缺省取 CLAUDE_JSON()
 export interface MoverEnv { projectsRoot: string; claudeJsonPath?: string }
@@ -78,4 +80,125 @@ export async function previewMove(sessionIds: string[], targetPath: string, env:
     items.push({ sessionId, title: meta.title, srcRoot, dstRoot: targetPath, structuralCwdFields: fields, sidecarBytes: sc.sidecar, toolResultsBytes: sc.toolResults, trashBackupBytes: trashBackup, blocked, blockReason })
   }
   return { items, claudeJsonWillAddEntry: !claudeJsonHasEntry(claudeJsonPath, targetPath), targetPathAbs: targetPath }
+}
+
+// 执行环境:在 MoverEnv 基础上注入回收区根与 db
+export interface ExecEnv extends MoverEnv { trashRoot?: string; db: Db }
+
+// 流式把源 jsonl 改写后写入目标:逐行经 rewriteLine 改写结构化 cwd 字段,正文绝不触碰;
+// 收集改动明细;小文件(<=快照体积上限)对发生改动的行额外保存原始内容作为快照
+async function rewriteFileToTarget(srcFile: string, dstFile: string, fileRel: string, srcRoot: string, dstRoot: string) {
+  mkdirSync(dirname(dstFile), { recursive: true })
+  const out = createWriteStream(dstFile, { encoding: 'utf8' })
+  const changes: { fileRel: string; lineNo: number; oldCwd: string; newCwd: string }[] = []
+  const snapshot: { fileRel: string; lineNo: number; content: string }[] = []
+  const small = statSync(srcFile).size <= SNAPSHOT_LINE_SIZE_CAP_BYTES
+  const rl = createInterface({ input: createReadStream(srcFile, { encoding: 'utf8' }), crlfDelay: Infinity })
+  let n = 0
+  for await (const raw of rl) {
+    n++
+    const r = rewriteLine(raw, srcRoot, dstRoot)
+    for (const c of r.changes) changes.push({ fileRel, lineNo: n, oldCwd: c.oldCwd, newCwd: c.newCwd })
+    if (small && r.changes.length) snapshot.push({ fileRel, lineNo: n, content: raw })
+    out.write(r.line + '\n')
+  }
+  await new Promise<void>((res, rej) => out.end((e: any) => (e ? rej(e) : res())))
+  return { changes, snapshot }
+}
+
+// 执行移动:对每个会话,先写目标并校验 → 再把原件移入回收区(后删源)→ 最后更新 db 与 .claude.json;
+// 任意环节抛错则回滚已写目标并把回收区备份搬回源,标记 failed。绝不先删源。
+export async function executeMove(sessionIds: string[], targetPath: string, env: ExecEnv): Promise<MoveResult[]> {
+  const trashRoot = env.trashRoot ?? TRASH_ROOT()
+  const claudeJsonPath = env.claudeJsonPath ?? CLAUDE_JSON()
+  const results: MoveResult[] = []
+  const pv = await previewMove(sessionIds, targetPath, env)
+
+  for (const item of pv.items) {
+    if (item.blocked) { results.push({ sessionId: item.sessionId, status: 'skipped', error: item.blockReason }); continue }
+    const found = findSessionFile(env.projectsRoot, item.sessionId)!
+    const srcRoot = item.srcRoot
+    // 空 srcRoot 护栏:无 cwd 的会话不可改写(否则 reRoot 空前缀会损坏所有绝对路径)
+    if (!srcRoot) { results.push({ sessionId: item.sessionId, status: 'skipped', error: '会话无 cwd,跳过' }); continue }
+    const targetFolder = join(env.projectsRoot, encodePath(targetPath))
+    const moveId = env.db.insertMove({ sessionId: item.sessionId, projectName: srcRoot, sourceDirAbs: srcRoot, sourceFolder: found.folder, sourceCwd: srcRoot, targetDirAbs: targetPath, targetFolder, trashPath: join(trashRoot, '0'), claudeJsonUpdated: false })
+    const trashDir = join(trashRoot, String(moveId))
+    const written: string[] = []
+    try {
+      mkdirSync(targetFolder, { recursive: true }); mkdirSync(trashDir, { recursive: true })
+      const allChanges: any[] = [], allSnap: any[] = []
+
+      const mainTarget = join(targetFolder, `${item.sessionId}.jsonl`)
+      const r1 = await rewriteFileToTarget(found.jsonl, mainTarget, `${item.sessionId}.jsonl`, srcRoot, targetPath)
+      written.push(mainTarget); allChanges.push(...r1.changes); allSnap.push(...r1.snapshot)
+
+      const srcSidecar = join(found.folder, item.sessionId)
+      const dstSidecar = join(targetFolder, item.sessionId)
+      if (existsSync(srcSidecar)) {
+        const subSrc = join(srcSidecar, 'subagents')
+        if (existsSync(subSrc)) for (const f of readdirSync(subSrc)) {
+          const sp = join(subSrc, f), dp = join(dstSidecar, 'subagents', f)
+          if (f.endsWith('.jsonl')) { const r = await rewriteFileToTarget(sp, dp, `${item.sessionId}/subagents/${f}`, srcRoot, targetPath); written.push(dp); allChanges.push(...r.changes); allSnap.push(...r.snapshot) }
+          else { mkdirSync(dirname(dp), { recursive: true }); renameSync(sp, dp) }
+        }
+        for (const sub of ['tool-results', 'hooks']) {
+          const d = join(srcSidecar, sub)
+          if (existsSync(d)) { mkdirSync(dstSidecar, { recursive: true }); renameSync(d, join(dstSidecar, sub)) }
+        }
+        for (const e of readdirSync(srcSidecar, { withFileTypes: true })) if (e.isFile()) { mkdirSync(dstSidecar, { recursive: true }); renameSync(join(srcSidecar, e.name), join(dstSidecar, e.name)) }
+      }
+
+      if (!existsSync(mainTarget)) throw new Error('目标写入校验失败')
+
+      renameSync(found.jsonl, join(trashDir, `${item.sessionId}.jsonl`))
+      if (existsSync(srcSidecar)) renameSync(srcSidecar, join(trashDir, item.sessionId))
+
+      env.db.insertCwdChanges(moveId, allChanges)
+      if (allSnap.length) env.db.insertSnapshotLines(moveId, allSnap)
+      const added = ensureProjectEntry(claudeJsonPath, targetPath, srcRoot)
+      env.db.updateMoveStatus(moveId, 'done', { rewrittenFieldCount: allChanges.length, sidecarBytes: item.sidecarBytes, claudeJsonUpdated: added })
+      results.push({ sessionId: item.sessionId, status: 'done', moveId })
+    } catch (e: any) {
+      for (const w of written) try { rmSync(w, { force: true }) } catch {}
+      try { rmSync(join(targetFolder, item.sessionId), { recursive: true, force: true }) } catch {}
+      const trashedMain = join(trashDir, `${item.sessionId}.jsonl`)
+      if (existsSync(trashedMain) && !existsSync(found.jsonl)) renameSync(trashedMain, found.jsonl)
+      const trashedSidecar = join(trashDir, item.sessionId)
+      if (existsSync(trashedSidecar) && !existsSync(join(found.folder, item.sessionId))) renameSync(trashedSidecar, join(found.folder, item.sessionId))
+      env.db.updateMoveStatus(moveId, 'failed')
+      results.push({ sessionId: item.sessionId, status: 'failed', moveId, error: String(e?.message ?? e) })
+    }
+  }
+  return results
+}
+
+// 崩溃恢复:对仍处于 pending 的移动判定终态——目标已就位且源已消失则补记 done;
+// 否则把回收区备份搬回源、清理半成品目标,标记 failed
+export function reconcile(env: ExecEnv) {
+  for (const m of env.db.getPendingMoves()) {
+    const targetMain = join(m.target_folder, `${m.session_id}.jsonl`)
+    const trashedMain = join(env.trashRoot ?? TRASH_ROOT(), String(m.id), `${m.session_id}.jsonl`)
+    const sourceMain = join(m.source_folder, `${m.session_id}.jsonl`)
+    if (existsSync(targetMain) && !existsSync(sourceMain)) env.db.updateMoveStatus(m.id, 'done')
+    else { if (existsSync(trashedMain) && !existsSync(sourceMain)) renameSync(trashedMain, sourceMain); try { rmSync(targetMain, { force: true }) } catch {}; env.db.updateMoveStatus(m.id, 'failed') }
+  }
+}
+
+// 撤销已完成的移动:清理目标 → 把回收区原件搬回源 → 移除 .claude.json 目标条目 → 标记 rolledback
+export function undoMove(moveId: number, env: ExecEnv) {
+  const m = env.db.getMoves().find((x) => x.id === moveId)
+  if (!m || m.status !== 'done') throw new Error('该移动不可撤销')
+  const trashDir = join(env.trashRoot ?? TRASH_ROOT(), String(moveId))
+  const sourceMain = join(m.source_folder, `${m.session_id}.jsonl`)
+  const targetMain = join(m.target_folder, `${m.session_id}.jsonl`)
+  const trashedMain = join(trashDir, `${m.session_id}.jsonl`)
+  if (!existsSync(trashedMain)) throw new Error('回收区备份缺失,无法撤销')
+  try { rmSync(targetMain, { force: true }) } catch {}
+  try { rmSync(join(m.target_folder, m.session_id), { recursive: true, force: true }) } catch {}
+  mkdirSync(m.source_folder, { recursive: true })
+  renameSync(trashedMain, sourceMain)
+  const trashedSidecar = join(trashDir, m.session_id)
+  if (existsSync(trashedSidecar)) renameSync(trashedSidecar, join(m.source_folder, m.session_id))
+  if (m.claude_json_updated) removeProjectEntry(env.claudeJsonPath ?? CLAUDE_JSON(), m.target_dir_abs)
+  env.db.updateMoveStatus(moveId, 'rolledback')
 }
