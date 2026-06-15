@@ -75,13 +75,13 @@ export function FsBrowserPane({ listing, target, onBrowse, onPickTarget, onMakeD
           <li
             className={target === path ? 'row sel' : 'row'}
             onClick={() => onPickTarget(path)}
-            title="选当前目录为目标"
+            title="当前目录(单击选为目标)"
           >
-            <div className="row-title">📂 .{target === path ? '  ✓ 已选为目标(当前目录)' : '  (当前目录,单击选为目标)'}</div>
+            <div className="row-title">📂 . (当前目录){target === path ? '  ✓ 目标' : ''}</div>
           </li>
           {listing.parent && (
             <li className="row" onClick={() => onBrowse(listing.parent!)} title="返回上级目录">
-              <div className="row-title">↩ ..{'  (上级目录)'}</div>
+              <div className="row-title">📁 .. (上级目录)</div>
             </li>
           )}
           {entries.map((e) => (
