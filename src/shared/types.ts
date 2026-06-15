@@ -61,3 +61,5 @@ export interface MoveResult {
 
 export interface FsEntry { name: string; path: string; isDir: boolean; isGitRepo: boolean }
 export interface FsListing { path: string; parent: string | null; entries: FsEntry[] }
+
+declare global { interface Window { api: import('../preload/index').Api } }

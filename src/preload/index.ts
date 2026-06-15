@@ -1,3 +1,13 @@
-import { contextBridge } from 'electron'
-
-contextBridge.exposeInMainWorld('api', {})
+import { contextBridge, ipcRenderer } from 'electron'
+const api = {
+  getIndex: () => ipcRenderer.invoke('index:get'),
+  getSessions: (p: string) => ipcRenderer.invoke('sessions:get', p),
+  refresh: () => ipcRenderer.invoke('refresh:run'),
+  listDir: (p: string) => ipcRenderer.invoke('fs:list', p),
+  previewMove: (ids: string[], t: string) => ipcRenderer.invoke('move:preview', ids, t),
+  executeMove: (ids: string[], t: string) => ipcRenderer.invoke('move:execute', ids, t),
+  listMoves: () => ipcRenderer.invoke('moves:list'),
+  undoMove: (id: number) => ipcRenderer.invoke('move:undo', id),
+}
+contextBridge.exposeInMainWorld('api', api)
+export type Api = typeof api
