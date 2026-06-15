@@ -2,5 +2,6 @@ node_modules/
 dist/
 out/
 .vite/
+coverage/
 *.log
 .DS_Store

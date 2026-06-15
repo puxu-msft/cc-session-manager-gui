@@ -34,4 +34,37 @@ describe('scanSessionFile', () => {
     expect(m.distinctCwds.sort()).toEqual(['/p/root', '/p/root/sub'])
     expect(m.hasSidecar).toBe(false)
   })
+
+  it('首条 user 消息为数组 content 时取首个 text 片段作预览', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'ccm-arr-'))
+    const f = join(d, 's-arr.jsonl')
+    writeFileSync(f, [
+      JSON.stringify({ type: 'user', cwd: '/x', timestamp: '2026-06-15T10:00:00Z', message: { content: [{ type: 'image' }, { type: 'text', text: '数组里的文本' }] } }),
+    ].join('\n') + '\n')
+    const m = await scanSessionFile(f)
+    expect(m.firstMessagePreview).toBe('数组里的文本')
+  })
+
+  it('数组 content 无 text 片段时预览为空串', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'ccm-notext-'))
+    const f = join(d, 's-notext.jsonl')
+    writeFileSync(f, [
+      JSON.stringify({ type: 'user', cwd: '/x', timestamp: '2026-06-15T10:00:00Z', message: { content: [{ type: 'image' }] } }),
+    ].join('\n') + '\n')
+    const m = await scanSessionFile(f)
+    expect(m.firstMessagePreview).toBe('')
+  })
+
+  it('ai-title 作标题来源,坏行被跳过', async () => {
+    const d = mkdtempSync(join(tmpdir(), 'ccm-ai-'))
+    const f = join(d, 's-ai.jsonl')
+    writeFileSync(f, [
+      '{ 这是坏的 JSON 行',
+      JSON.stringify({ type: 'user', cwd: '/x', timestamp: '2026-06-15T10:00:00Z', message: { content: '问题' } }),
+      JSON.stringify({ type: 'ai-title', aiTitle: 'AI 生成标题' }),
+    ].join('\n') + '\n')
+    const m = await scanSessionFile(f)
+    expect(m.title).toBe('AI 生成标题')
+    expect(m.firstMessagePreview).toBe('问题')
+  })
 })

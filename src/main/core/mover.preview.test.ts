@@ -36,4 +36,29 @@ describe('previewMove', () => {
     const pv = await previewMove(['s2'], dst, { projectsRoot: projects })
     expect(pv.items[0].blocked).toBe('live')
   })
+
+  it('源会话不存在时返回 blocked=collision', async () => {
+    const { projects, dst } = setup()
+    const pv = await previewMove(['missing-id'], dst, { projectsRoot: projects })
+    expect(pv.items[0].blocked).toBe('collision')
+    expect(pv.items[0].blockReason).toBe('源会话不存在')
+  })
+
+  it('目标编码文件夹已被其它 cwd 的会话占用 → blocked=encode-collision', async () => {
+    const { projects, src, dst } = setup()
+    const { encodePath } = await import('./pathCodec')
+    // 源会话(陈旧 mtime,非 live)
+    const fdir = join(projects, encodePath(src)); mkdirSync(fdir, { recursive: true })
+    const jsonl = join(fdir, 's1.jsonl')
+    writeFileSync(jsonl, JSON.stringify({ type: 'user', cwd: src, timestamp: '2026-06-15T10:00:00Z', message: { content: 'hi' } }))
+    utimesSync(jsonl, new Date(Date.now() - 600_000), new Date(Date.now() - 600_000))
+    // 目标编码文件夹下已有一个 cwd 不等于 dst 的会话,触发 line 74-75 的占用判定
+    const targetFolder = join(projects, encodePath(dst)); mkdirSync(targetFolder, { recursive: true })
+    const otherCwd = join(src, '..', 'someone-else')
+    writeFileSync(join(targetFolder, 'other.jsonl'),
+      JSON.stringify({ type: 'user', cwd: otherCwd, timestamp: '2026-06-15T09:00:00Z', message: { content: 'x' } }))
+
+    const pv = await previewMove(['s1'], dst, { projectsRoot: projects })
+    expect(pv.items[0].blocked).toBe('encode-collision')
+  })
 })
