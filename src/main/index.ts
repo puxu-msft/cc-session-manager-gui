@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
-import { registerIpc } from './ipc'
+import { registerIpc, abortCurrentScan } from './ipc'
+import { closeDb } from './appState'
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -19,4 +20,9 @@ function createWindow() {
 app.whenReady().then(() => { registerIpc(); createWindow() })
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+// 退出前优雅关停:中断进行中的扫描(否则长扫描会拖住退出)并关闭 DB 连接。
+app.on('before-quit', () => {
+  abortCurrentScan()
+  closeDb()
 })

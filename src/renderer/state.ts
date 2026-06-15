@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import type { MovePreview } from '@shared/types'
+import type { MovePreview, RefreshProgress } from '@shared/types'
 
 export function useAppState() {
   const [projects, setProjects] = useState<any[]>([])
@@ -10,11 +10,26 @@ export function useAppState() {
   const [fsListing, setFsListing] = useState<any>(null)
   const [targetDir, setTargetDir] = useState<string | null>(null)
   const [preview, setPreview] = useState<MovePreview | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [progress, setProgress] = useState<RefreshProgress | null>(null)
 
   const loadIndex = useCallback(async () => setProjects((await window.api.getIndex()).projects), [])
-  const refresh = useCallback(async () => { const r = await window.api.refresh(); setProjects(r.projects); return r.diff }, [])
+  const refresh = useCallback(async () => {
+    setRefreshing(true)
+    setProgress({ done: 0, total: 0, path: '' })
+    const off = window.api.onRefreshProgress((p) => setProgress(p))
+    try {
+      const r = await window.api.refresh()
+      setProjects(r.projects)
+      return r.diff
+    } finally {
+      off()
+      setRefreshing(false)
+      setProgress(null)
+    }
+  }, [])
   const pickProject = useCallback(async (p: string) => { setSelectedProject(p); setSelectedSessions(new Set()); setSessions(await window.api.getSessions(p)) }, [])
   const browse = useCallback(async (p: string) => { const l = await window.api.listDir(p); setFsPath(l.path); setFsListing(l) }, [])
 
-  return { projects, selectedProject, sessions, selectedSessions, setSelectedSessions, fsPath, fsListing, targetDir, setTargetDir, preview, setPreview, loadIndex, refresh, pickProject, browse }
+  return { projects, selectedProject, sessions, selectedSessions, setSelectedSessions, fsPath, fsListing, targetDir, setTargetDir, preview, setPreview, refreshing, progress, loadIndex, refresh, pickProject, browse }
 }
