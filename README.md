@@ -14,10 +14,15 @@ Claude Code 把每个会话存为 `~/.claude/projects/<编码后的cwd>/<session
 npm install              # 安装依赖;postinstall 会把原生模块按 Electron ABI 重建
 npm run dev              # 启动 Electron 应用(electron-vite dev)
 npm run build            # 生产构建(electron-vite build)
-npm test                 # 运行单元测试(见下方"测试运行时")
-npm run test:coverage    # 带覆盖率运行,聚焦核心逻辑模块
-npm run rebuild          # 手动把原生模块重建为 Electron ABI(electron-builder install-app-deps)
+npm test                 # 单元/集成测试(见下方"测试运行时")
+npm run test:coverage    # 带覆盖率运行
+npm run e2e              # Electron 端到端冒烟(Playwright:验证 window.api/三栏/右栏加载)
+npm run pack             # 打包为未压缩应用目录(release/linux-unpacked)
+npm run dist             # 打包为可分发安装包(AppImage)
+npm run rebuild          # 手动把原生模块重建为 Electron ABI
 ```
+
+界面:左栏按路径聚合的项目(可过滤)、中栏会话(显式复选框、可过滤、可全选)、右栏完整目录浏览器(快捷根/路径输入/新建文件夹/`.`·`..` 导航)。底部刷新带进度;历史视图可撤销移动、查看回收区占用并手动清理。
 
 核心逻辑模块(`src/main/core/**`、`src/main/db/**`)可独立单元测试;UI 组件、IPC、Electron 运行时胶水层不通过测试覆盖。
 
