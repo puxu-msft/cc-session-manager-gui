@@ -10,6 +10,8 @@ const api = {
   executeMove: (ids: string[], t: string) => ipcRenderer.invoke('move:execute', ids, t),
   listMoves: () => ipcRenderer.invoke('moves:list'),
   undoMove: (id: number) => ipcRenderer.invoke('move:undo', id),
+  trashUsage: () => ipcRenderer.invoke('trash:usage'),
+  purgeTrash: (moveId?: number) => ipcRenderer.invoke('trash:purge', moveId),
   // 订阅刷新进度;返回取消订阅函数。
   onRefreshProgress: (cb: (p: RefreshProgress) => void) => {
     const h = (_e: unknown, data: RefreshProgress) => cb(data)

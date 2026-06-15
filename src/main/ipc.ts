@@ -7,6 +7,7 @@ import type { SessionMeta, ProjectMeta } from '@shared/types'
 import { getEnv } from './appState'
 import { applyScanToIndex } from './refresh'
 import { listDir } from './core/fsBrowser'
+import { trashUsage, purgeMove, purgeAllTrash } from './trash'
 import { previewMove, executeMove, reconcile, undoMove } from './core/mover'
 
 // 进行中的扫描 worker:刷新可被新刷新抢占,退出时也会被终止,确保主进程不被长扫描卡住、退出不被阻塞。
@@ -75,5 +76,10 @@ export function registerIpc(): void {
   ipcMain.handle('move:execute', (_e, ids: string[], target: string) => executeMove(ids, target, env as any))
   ipcMain.handle('moves:list', () => env.db.getMoves())
   ipcMain.handle('move:undo', (_e, moveId: number) => { undoMove(moveId, env as any); return env.db.getMoves() })
+  ipcMain.handle('trash:usage', () => trashUsage(env.trashRoot))
+  ipcMain.handle('trash:purge', (_e, moveId?: number) => {
+    if (moveId == null) purgeAllTrash(env.trashRoot); else purgeMove(env.trashRoot, moveId)
+    return { moves: env.db.getMoves(), usage: trashUsage(env.trashRoot) }
+  })
 }
 

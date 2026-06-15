@@ -40,3 +40,7 @@ button.primary:disabled { background: #b9c6e6; cursor: not-allowed; }
 .sess-row { display: flex; align-items: flex-start; gap: 8px; }
 .sess-check { margin-top: 2px; pointer-events: none; flex: 0 0 auto; }
 .sess-body { min-width: 0; }
+.trash-summary { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #444; margin: 4px 0 10px; }
+.hist-actions { display: flex; gap: 6px; }
+button.danger { background: #fff; color: #b00020; border: 1px solid #f0b3b3; padding: 3px 8px; border-radius: 5px; cursor: pointer; font-size: 12px; }
+button.danger:disabled { color: #ccc; border-color: #eee; cursor: not-allowed; }
