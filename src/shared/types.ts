@@ -60,7 +60,7 @@ export interface MoveResult {
 }
 
 export interface FsEntry { name: string; path: string; isDir: boolean; isGitRepo: boolean }
-export interface FsListing { path: string; parent: string | null; entries: FsEntry[] }
+export interface FsListing { path: string; parent: string | null; entries: FsEntry[]; home: string; error?: string }
 
 // 刷新索引时的进度上报(主进程 → 渲染进程)
 export interface RefreshProgress { done: number; total: number; path: string }

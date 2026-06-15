@@ -24,3 +24,15 @@ button.primary:disabled { background: #b9c6e6; cursor: not-allowed; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .progress { flex: 1; max-width: 240px; height: 6px; background: #e6e6e6; border-radius: 3px; overflow: hidden; }
 .progress-bar { height: 100%; background: #2563eb; transition: width 120ms linear; }
+.fsbar { border-bottom: 1px solid #eee; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; background: #fafafa; }
+.fsbar-row { display: flex; gap: 6px; align-items: center; }
+.fsbar-row button { font-size: 12px; padding: 4px 8px; }
+.path-input { flex: 1; font-size: 12px; padding: 5px 8px; border: 1px solid #ccc; border-radius: 5px; font-family: ui-monospace, monospace; }
+.crumb { display: flex; flex-wrap: wrap; align-items: center; font-size: 12px; color: #555; }
+.crumb-seg { cursor: pointer; padding: 1px 3px; border-radius: 3px; }
+.crumb-seg:hover { background: #e6efff; color: #2563eb; }
+.crumb-sep { color: #bbb; }
+.fsbar .pick { align-self: flex-start; font-size: 12px; padding: 5px 10px; border: 1px solid #2563eb; background: #fff; color: #2563eb; border-radius: 5px; cursor: pointer; }
+.fsbar .pick.sel { background: #2563eb; color: #fff; }
+.fsbar .pick:disabled { border-color: #ccc; color: #aaa; cursor: not-allowed; }
+.fs-empty { padding: 16px 12px; color: #888; font-size: 12px; }
