@@ -18,6 +18,9 @@ button.primary { background: #2563eb; color: #fff; border: 0; padding: 8px 14px;
 button.primary:disabled { background: #b9c6e6; cursor: not-allowed; }
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; }
 .modal { background: #fff; border-radius: 10px; padding: 20px; width: 680px; max-height: 80vh; overflow: auto; }
+.modal.small { width: 380px; }
+.newdir-path { font-size: 12px; color: #777; margin: 4px 0 10px; word-break: break-all; }
+.newdir-input { width: 100%; box-sizing: border-box; margin: 0 0 12px; }
 .preview { width: 100%; border-collapse: collapse; font-size: 12px; margin: 12px 0; }
 .preview th, .preview td { border: 1px solid #eee; padding: 6px; text-align: left; }
 .preview tr.blocked { color: #b00; background: #fff5f5; }

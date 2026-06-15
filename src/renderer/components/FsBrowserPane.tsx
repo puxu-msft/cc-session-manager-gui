@@ -13,6 +13,7 @@ interface FsBrowserPaneProps {
 // 列表首两项为 .(当前目录,单击即选为目标)与 ..(上级,单击返回);其后是各子目录(单击选为目标·双击进入)。
 export function FsBrowserPane({ listing, target, onBrowse, onPickTarget, onMakeDir }: FsBrowserPaneProps) {
   const [input, setInput] = useState('')
+  const [newDirOpen, setNewDirOpen] = useState(false)
   const [newName, setNewName] = useState('')
   useEffect(() => { if (listing?.path) setInput(listing.path) }, [listing?.path])
 
@@ -23,7 +24,13 @@ export function FsBrowserPane({ listing, target, onBrowse, onPickTarget, onMakeD
   const segments = path ? path.split('/').filter(Boolean) : []
   const crumbPath = (i: number) => '/' + segments.slice(0, i + 1).join('/')
 
+  const confirmNewDir = () => {
+    const n = newName.trim()
+    if (n && path) { onMakeDir(path, n); setNewDirOpen(false) }
+  }
+
   return (
+    <>
     <div className="pane">
       <div className="pane-header">目标目录</div>
 
@@ -31,6 +38,7 @@ export function FsBrowserPane({ listing, target, onBrowse, onPickTarget, onMakeD
         <div className="fsbar-row">
           {home && <button onClick={() => onBrowse(home)} title={home}>🏠 主目录</button>}
           <button onClick={() => onBrowse('/')}>/ 根目录</button>
+          <button disabled={!path} onClick={() => { setNewName(''); setNewDirOpen(true) }}>＋ 新建文件夹</button>
         </div>
         <form className="fsbar-row" onSubmit={(e) => { e.preventDefault(); if (input.trim()) onBrowse(input.trim()) }}>
           <input
@@ -41,19 +49,6 @@ export function FsBrowserPane({ listing, target, onBrowse, onPickTarget, onMakeD
             onChange={(e) => setInput(e.target.value)}
           />
           <button type="submit">跳转</button>
-        </form>
-        <form
-          className="fsbar-row"
-          onSubmit={(e) => { e.preventDefault(); const n = newName.trim(); if (n && path) { onMakeDir(path, n); setNewName('') } }}
-        >
-          <input
-            className="path-input"
-            value={newName}
-            placeholder="在当前目录新建文件夹…"
-            spellCheck={false}
-            onChange={(e) => setNewName(e.target.value)}
-          />
-          <button type="submit" disabled={!newName.trim() || !path}>＋ 新建</button>
         </form>
         <div className="crumb">
           <span className="crumb-seg" onClick={() => onBrowse('/')}>/</span>
@@ -98,5 +93,28 @@ export function FsBrowserPane({ listing, target, onBrowse, onPickTarget, onMakeD
         </ul>
       )}
     </div>
+
+    {newDirOpen && (
+      <div className="modal-backdrop" onClick={() => setNewDirOpen(false)}>
+        <div className="modal small" onClick={(e) => e.stopPropagation()}>
+          <h3>新建文件夹</h3>
+          <div className="newdir-path">位置:{path}</div>
+          <input
+            className="path-input newdir-input"
+            autoFocus
+            value={newName}
+            placeholder="文件夹名"
+            spellCheck={false}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') confirmNewDir(); if (e.key === 'Escape') setNewDirOpen(false) }}
+          />
+          <div className="modal-actions">
+            <button onClick={() => setNewDirOpen(false)}>取消</button>
+            <button className="primary" disabled={!newName.trim()} onClick={confirmNewDir}>确认</button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
