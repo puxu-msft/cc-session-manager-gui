@@ -1,14 +1,16 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useAppState } from './state'
 import { DirectoryPane } from './components/DirectoryPane'
 import { SessionPane } from './components/SessionPane'
 import { FsBrowserPane } from './components/FsBrowserPane'
 import { MoveBar } from './components/MoveBar'
 import { ConfirmModal } from './components/ConfirmModal'
+import { HistoryView } from './components/HistoryView'
 import './styles.css'
 
 export function App() {
   const st = useAppState()
+  const [showHistory, setShowHistory] = useState(false)
   useEffect(() => { st.loadIndex(); st.browse('') }, [])
 
   const toggle = (id: string, multi: boolean) => {
@@ -30,8 +32,9 @@ export function App() {
         <SessionPane sessions={st.sessions} selected={st.selectedSessions} onToggle={toggle} />
         <FsBrowserPane listing={st.fsListing} target={st.targetDir} onBrowse={st.browse} onPickTarget={st.setTargetDir} />
       </div>
-      <MoveBar count={st.selectedSessions.size} target={st.targetDir} onMove={startMove} onRefresh={st.refresh} />
+      <MoveBar count={st.selectedSessions.size} target={st.targetDir} onMove={startMove} onRefresh={st.refresh} onHistory={() => setShowHistory(true)} />
       {st.preview && <ConfirmModal preview={st.preview} onCancel={() => st.setPreview(null)} onConfirm={confirmMove} />}
+      {showHistory && <HistoryView onClose={() => setShowHistory(false)} />}
     </div>
   )
 }
