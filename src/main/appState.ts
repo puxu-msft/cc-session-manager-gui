@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { join } from 'node:path'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, existsSync, renameSync } from 'node:fs'
 import { openDb, type Db } from './db/db'
 import { detectSources, type Source } from './sources'
 
@@ -37,8 +37,22 @@ function activeSource(): Source {
 
 function dbFor(id: string): Db {
   let db = dbs.get(id)
-  if (!db) { db = openDb(join(userDataDir(), `index-${id}.db`)); dbs.set(id, db) }
+  if (!db) {
+    if (id === 'local') migrateLegacyLocalDb(userDataDir())
+    db = openDb(join(userDataDir(), `index-${id}.db`)); dbs.set(id, db)
+  }
   return db
+}
+
+// 一次性迁移:旧版用单个 index.db(对应本机源)。若新库 index-local.db 尚不存在而旧库在,
+// 则把 index.db(连同 -wal/-shm)改名继承,保留移动历史/撤销/快照,不丢数据。
+export function migrateLegacyLocalDb(dir: string): void {
+  const target = join(dir, 'index-local.db')
+  if (existsSync(target)) return
+  for (const suf of ['', '-wal', '-shm']) {
+    const legacy = join(dir, 'index.db' + suf)
+    if (existsSync(legacy)) { try { renameSync(legacy, target + suf) } catch { /* 忽略 */ } }
+  }
 }
 
 export interface Env { db: Db; projectsRoot: string; claudeJsonPath: string; trashRoot: string }
