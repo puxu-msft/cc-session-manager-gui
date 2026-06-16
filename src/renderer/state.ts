@@ -14,6 +14,7 @@ export function useAppState() {
   const [progress, setProgress] = useState<RefreshProgress | null>(null)
   const [sources, setSources] = useState<SourceInfo[]>([])
   const [activeSource, setActiveSource] = useState<string>('')
+  const [reconcilePending, setReconcilePending] = useState(0)
 
   const loadSources = useCallback(async () => {
     setSources(await window.api.listSources())
@@ -47,6 +48,9 @@ export function useAppState() {
     const l = await window.api.makeDir(parent, name)
     setFsPath(l.path); setFsListing(l); setTargetDir(l.path)
   }, [])
+  const loadReconcilePending = useCallback(async () => {
+    try { const p = await window.api.planHistory(); setReconcilePending(p.ops.length) } catch { setReconcilePending(0) }
+  }, [])
 
-  return { projects, selectedProject, sessions, selectedSessions, setSelectedSessions, fsPath, fsListing, targetDir, setTargetDir, preview, setPreview, refreshing, progress, sources, activeSource, loadSources, switchSource, loadIndex, refresh, pickProject, browse, makeDir }
+  return { projects, selectedProject, sessions, selectedSessions, setSelectedSessions, fsPath, fsListing, targetDir, setTargetDir, preview, setPreview, refreshing, progress, sources, activeSource, loadSources, switchSource, loadIndex, refresh, pickProject, browse, makeDir, reconcilePending, loadReconcilePending }
 }
