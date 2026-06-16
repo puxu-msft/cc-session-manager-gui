@@ -64,6 +64,34 @@ export function openDb(file: string) {
       const tx = db.transaction(() => rows.forEach((r) => stmt.run(moveId, r.fileRel, r.lineNo, r.content)))
       tx()
     },
+    // 按主键返回会话 cwd,缺失返回 null
+    getSessionCwd(sessionId: string): string | null {
+      const r = db.prepare('SELECT cwd FROM sessions WHERE session_id=?').get(sessionId) as { cwd: string } | undefined
+      return r ? r.cwd : null
+    },
+    // 原子写入一条 history 改写记录及其涉及的会话旁表
+    insertHistoryRewrite(op: { source: string; oldProject: string; newProject: string; sessionIds: string[]; affectedLines: number }): number {
+      return db.transaction(() => {
+        const r = db.prepare(`INSERT INTO history_rewrites (source,old_project,new_project,affected_lines,rewritten_at)
+          VALUES (?,?,?,?,?)`).run(op.source, op.oldProject, op.newProject, op.affectedLines, new Date().toISOString())
+        const id = Number(r.lastInsertRowid)
+        const stmt = db.prepare('INSERT INTO history_rewrite_sessions (rewrite_id,session_id) VALUES (?,?)')
+        op.sessionIds.forEach((s) => stmt.run(id, s))
+        return id
+      })()
+    },
+    getHistoryRewrite(id: number): any {
+      const row = db.prepare('SELECT * FROM history_rewrites WHERE id=?').get(id) as any
+      if (!row) return null
+      const sids = db.prepare('SELECT session_id FROM history_rewrite_sessions WHERE rewrite_id=?').all(id) as { session_id: string }[]
+      return { ...row, session_ids: sids.map((s) => s.session_id) }
+    },
+    getHistoryRewrites(): any[] {
+      return (db.prepare('SELECT * FROM history_rewrites ORDER BY id DESC').all() as any[]).map((row) => {
+        const sids = db.prepare('SELECT session_id FROM history_rewrite_sessions WHERE rewrite_id=?').all(row.id) as { session_id: string }[]
+        return { ...row, session_ids: sids.map((s) => s.session_id) }
+      })
+    },
     transaction<T>(fn: () => T): T { return db.transaction(fn)() },
     close() { db.close() },
   }

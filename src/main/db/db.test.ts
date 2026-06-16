@@ -111,4 +111,27 @@ describe('db', () => {
     expect(b.getProjects().length).toBe(1)
     b.raw.close()
   })
+
+  it('getSessionCwd 按主键返回 cwd,缺失返回 null', () => {
+    const db = openDb(':memory:')
+    db.upsertSession({ sessionId: 'sx', projectPathAbs: '/p', folderName: '-p', cwd: '/p',
+      title: '', firstMessagePreview: '', startedAt: null, lastActivityAt: null,
+      messageCount: 0, lineCount: 0, sizeBytes: 0, mtime: 0, gitBranch: null, claudeVersion: null,
+      entrypoint: null, isSidechain: false, distinctCwds: [], hasSidecar: false, subagentCount: 0,
+      toolResultsBytes: 0, movedFlag: false, lastMoveId: null } as any)
+    expect(db.getSessionCwd('sx')).toBe('/p')
+    expect(db.getSessionCwd('missing')).toBeNull()
+  })
+
+  it('insert/get HistoryRewrite 往返,含旁表 session 集合', () => {
+    const db = openDb(':memory:')
+    const id = db.insertHistoryRewrite({ source: 'auto', oldProject: '/a', newProject: '/b', sessionIds: ['s1', 's2'], affectedLines: 3 })
+    const rec = db.getHistoryRewrite(id)
+    expect(rec.old_project).toBe('/a')
+    expect(rec.new_project).toBe('/b')
+    expect(rec.affected_lines).toBe(3)
+    expect(new Set(rec.session_ids)).toEqual(new Set(['s1', 's2']))
+    const all = db.getHistoryRewrites()
+    expect(all.map((r: any) => r.id)).toContain(id)
+  })
 })

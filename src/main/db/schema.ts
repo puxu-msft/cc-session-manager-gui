@@ -20,4 +20,8 @@ CREATE TABLE IF NOT EXISTS moves (
   rewritten_field_count INTEGER, sidecar_bytes INTEGER, trash_path TEXT, claude_json_updated INTEGER);
 CREATE TABLE IF NOT EXISTS cwd_changes (move_id INTEGER, file_rel TEXT, line_no INTEGER, old_cwd TEXT, new_cwd TEXT);
 CREATE TABLE IF NOT EXISTS snapshot_lines (move_id INTEGER, file_rel TEXT, line_no INTEGER, content TEXT);
+CREATE TABLE IF NOT EXISTS history_rewrites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT,
+  old_project TEXT, new_project TEXT, affected_lines INTEGER, rewritten_at TEXT);
+CREATE TABLE IF NOT EXISTS history_rewrite_sessions (rewrite_id INTEGER, session_id TEXT);
 `
