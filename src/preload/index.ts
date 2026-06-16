@@ -15,6 +15,10 @@ const api = {
   undoMove: (id: number) => ipcRenderer.invoke('move:undo', id),
   trashUsage: () => ipcRenderer.invoke('trash:usage'),
   purgeTrash: (moveId?: number) => ipcRenderer.invoke('trash:purge', moveId),
+  planHistory: () => ipcRenderer.invoke('history:plan'),
+  reconcileHistory: (mode: 'auto' | 'force', sessionIds?: string[], target?: string) => ipcRenderer.invoke('history:reconcile', mode, sessionIds, target),
+  listHistoryRewrites: () => ipcRenderer.invoke('history:listRewrites'),
+  undoHistoryRewrite: (id: number) => ipcRenderer.invoke('history:undoRewrite', id),
   // 订阅刷新进度;返回取消订阅函数。
   onRefreshProgress: (cb: (p: RefreshProgress) => void) => {
     const h = (_e: unknown, data: RefreshProgress) => cb(data)

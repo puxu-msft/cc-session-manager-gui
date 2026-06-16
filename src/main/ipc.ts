@@ -9,6 +9,7 @@ import { applyScanToIndex } from './refresh'
 import { listDir } from './core/fsBrowser'
 import { trashUsage, purgeMove, purgeAllTrash } from './trash'
 import { previewMove, executeMove, reconcile, undoMove } from './core/mover'
+import { planReconcile, planForce, executeReconcile, undoRewrite } from './core/historyReconciler'
 
 // 进行中的扫描 worker:刷新可被新刷新抢占,退出时也会被终止,确保主进程不被长扫描卡住、退出不被阻塞。
 let currentWorker: Worker | null = null
@@ -92,5 +93,15 @@ export function registerIpc(): void {
     if (moveId == null) purgeAllTrash(env.trashRoot); else purgeMove(env.trashRoot, moveId)
     return { moves: env.db.getMoves(), usage: trashUsage(env.trashRoot) }
   })
+
+  ipcMain.handle('history:plan', () => planReconcile(getEnv() as any))
+  ipcMain.handle('history:reconcile', (_e, mode: 'auto' | 'force', sessionIds?: string[], target?: string) => {
+    const env = getEnv() as any
+    const plan = mode === 'force' ? planForce(env, sessionIds ?? [], target ?? '') : planReconcile(env)
+    const result = executeReconcile(env, plan, mode)
+    return { result, rewrites: env.db.getHistoryRewrites() }
+  })
+  ipcMain.handle('history:listRewrites', () => getEnv().db.getHistoryRewrites())
+  ipcMain.handle('history:undoRewrite', (_e, id: number) => { const env = getEnv() as any; undoRewrite(env, id); return env.db.getHistoryRewrites() })
 }
 
