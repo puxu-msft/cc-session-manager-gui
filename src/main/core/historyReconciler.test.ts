@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openDb, type Db } from '../db/db'
-import { planReconcile, planForce, executeReconcile } from './historyReconciler'
+import { planReconcile, planForce, executeReconcile, undoRewrite } from './historyReconciler'
 
 let dir: string, db: Db
 const histPath = () => join(dir, 'history.jsonl')
@@ -102,5 +102,43 @@ describe('executeReconcile', () => {
     const recs = db.getHistoryRewrites()
     expect(recs[0]).toMatchObject({ source: 'auto', old_project: '/old', new_project: '/new', affected_lines: 1 })
     expect(recs[0].session_ids).toContain('s1')
+  })
+})
+
+describe('undoRewrite', () => {
+  it('把记录的 new_project 行改回 old_project', () => {
+    writeFileSync(histPath(), '{"project":"/new","sessionId":"s1"}\n')
+    const id = db.insertHistoryRewrite({ source: 'auto', oldProject: '/old', newProject: '/new', sessionIds: ['s1'], affectedLines: 1 })
+    undoRewrite(env(), id)
+    expect(readFileSync(histPath(), 'utf8')).toContain('"project":"/old"')
+  })
+
+  it('auto→undo 往返:project 值复原(A/B 两会话各自还原各自旧值)', () => {
+    // 两个不同 sessionId 各持一个旧 project,一起强制对齐到 /c。
+    // undo 按 (sessionId,行内 project===new_project) 匹配,故各自精确还原 —
+    // 若复用同一 sessionId 把 /a、/b 都并到 /c,正向已把两个旧值塌缩成一个值,
+    // 值级反向无从区分,不可逆(这是该撤销策略的固有边界)。
+    indexSession('sa', '/c'); indexSession('sb', '/c')
+    writeFileSync(histPath(), '{"project":"/a","sessionId":"sa"}\n{"project":"/b","sessionId":"sb"}\n')
+    const fplan = planForce(env(), ['sa', 'sb'], '/c')
+    executeReconcile(env(), fplan, 'force')
+    expect(readFileSync(histPath(), 'utf8').match(/\/c/g)).toHaveLength(2)
+    for (const rec of db.getHistoryRewrites()) undoRewrite(env(), rec.id)
+    const after = readFileSync(histPath(), 'utf8')
+    expect(after).toContain('"project":"/a"')
+    expect(after).toContain('"project":"/b"')
+  })
+
+  it('已知边界:同一 sessionId 多 project 强制并到单一 target 后 undo 有损(锁定该行为)', () => {
+    // force 把同一 sessionId 的 /a、/b 两行都并到 /c → 正向已把两个旧值塌缩成同一值。
+    // 值级反向(按 sessionId+当前 project 匹配)无从区分原属 /a 还是 /b,故 undo 不可逆。
+    // auto 永不触发此情形(多 project 会走 ambiguous 不动);仅在用户显式 force 多 project 会话时发生。
+    writeFileSync(histPath(), '{"project":"/a","sessionId":"s"}\n{"project":"/b","sessionId":"s"}\n')
+    executeReconcile(env(), planForce(env(), ['s'], '/c'), 'force')
+    expect(readFileSync(histPath(), 'utf8').match(/\/c/g)).toHaveLength(2)
+    for (const rec of db.getHistoryRewrites()) undoRewrite(env(), rec.id)
+    const projects = [...readFileSync(histPath(), 'utf8').matchAll(/"project":"([^"]*)"/g)].map((m) => m[1])
+    expect(projects[0]).toBe(projects[1]) // 两行塌缩为同一值
+    expect(projects.includes('/a') && projects.includes('/b')).toBe(false) // 无法同时还原 /a 与 /b
   })
 })

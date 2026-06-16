@@ -91,3 +91,15 @@ export function executeReconcile(env: ReconEnv, plan: ReconcilePlan, source: 'au
   })
   return result
 }
+
+// 撤销一条 history_rewrites:把该次涉及的会话中,当前 project 仍等于 new_project 的行改回 old_project。
+// 复用 applyHistoryRewrite 的 (sessionId,行内 project===oldProject) 匹配 → 反向 op 的 oldProject 即记录的 new_project。
+export function undoRewrite(env: ReconEnv, rewriteId: number): RewriteOp[] {
+  const rec = env.db.getHistoryRewrite(rewriteId)
+  if (!rec) throw new Error('对账记录不存在')
+  const h = readHistory(env.historyJsonlPath)
+  const ops: ApplyOp[] = (rec.session_ids as string[]).map((sid) => ({
+    sessionId: sid, oldProject: rec.new_project, newProject: rec.old_project,
+  }))
+  return applyHistoryRewrite(env.historyJsonlPath, ops, { size: h.size, mtime: h.mtime })
+}
