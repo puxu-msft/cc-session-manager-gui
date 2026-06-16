@@ -54,3 +54,9 @@ button.primary:disabled { background: #b9c6e6; cursor: not-allowed; }
 .hist-actions { display: flex; gap: 6px; }
 button.danger { background: #fff; color: #b00020; border: 1px solid #f0b3b3; padding: 3px 8px; border-radius: 5px; cursor: pointer; font-size: 12px; }
 button.danger:disabled { color: #ccc; border-color: #eee; cursor: not-allowed; }
+.badge { display: inline-block; min-width: 16px; margin-left: 6px; padding: 0 5px; background: #2563eb; color: #fff; border-radius: 8px; font-size: 11px; line-height: 16px; text-align: center; }
+.rec-summary { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.rec-summary .primary { margin-left: auto; }
+.rec-force { display: flex; gap: 6px; }
+.rec-force input { flex: 1; padding: 3px 6px; border: 1px solid #ddd; border-radius: 5px; font-size: 12px; }
+.rec-err { color: #b00020; background: #fff5f5; border: 1px solid #f0b3b3; padding: 6px 8px; border-radius: 5px; font-size: 12px; }
