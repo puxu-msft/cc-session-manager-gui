@@ -54,3 +54,17 @@ test('WSL 下探测到本机+Windows 两个数据源,可切换', async () => {
     await expect.poll(() => page.evaluate(() => (window as any).api.getSource())).toBe('windows')
   }
 })
+
+test('对账 modal 可打开关闭', async () => {
+  app = await electron.launch({
+    args: ['out/main/index.js', '--no-sandbox'],
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '' },
+  })
+  const page = await app.firstWindow()
+
+  // 对账按钮可能带徽标数字,用正则匹配文案
+  await page.getByRole('button', { name: /对账/ }).click()
+  await expect(page.getByText('History 对账')).toBeVisible()
+  await page.getByRole('button', { name: '关闭' }).click()
+  await expect(page.getByText('History 对账')).toHaveCount(0)
+})
