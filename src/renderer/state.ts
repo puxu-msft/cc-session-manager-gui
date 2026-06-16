@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import type { MovePreview, RefreshProgress, SourceInfo } from '@shared/types'
+import { reconcileSummary } from './lib/reconcileView'
 
 export function useAppState() {
   const [projects, setProjects] = useState<any[]>([])
@@ -49,7 +50,7 @@ export function useAppState() {
     setFsPath(l.path); setFsListing(l); setTargetDir(l.path)
   }, [])
   const loadReconcilePending = useCallback(async () => {
-    try { const p = await window.api.planHistory(); setReconcilePending(p.ops.length) } catch { setReconcilePending(0) }
+    try { const p = await window.api.planHistory(); setReconcilePending(reconcileSummary(p).opsLines) } catch { setReconcilePending(0) }
   }, [])
 
   return { projects, selectedProject, sessions, selectedSessions, setSelectedSessions, fsPath, fsListing, targetDir, setTargetDir, preview, setPreview, refreshing, progress, sources, activeSource, loadSources, switchSource, loadIndex, refresh, pickProject, browse, makeDir, reconcilePending, loadReconcilePending }

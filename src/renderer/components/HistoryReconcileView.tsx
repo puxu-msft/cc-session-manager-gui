@@ -23,7 +23,7 @@ export function HistoryReconcileView({ onClose, onChanged }: { onClose: () => vo
   const runAuto = () => guard(() => window.api.reconcileHistory('auto'))
   const runForce = (sid: string, projects: string[]) => {
     const target = (targets[sid] ?? '').trim()
-    if (!target) return
+    if (!target) { setErr('请先填写目标绝对路径'); return }
     if (isLossyForce(projects) && !confirm(`会话 ${sid.slice(0, 8)} 在历史里有多个不同 project,强制并到单一路径后撤销将有损(无法精确还原各自旧值)。确认?`)) return
     return guard(() => window.api.reconcileHistory('force', [sid], target))
   }
