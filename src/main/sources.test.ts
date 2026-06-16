@@ -25,4 +25,10 @@ describe('detectSources', () => {
     expect(local.claudeJsonPath).toBe(join(homedir(), '.claude.json'))
     expect(local.trashRoot).toBe(join(homedir(), '.claude', '.cc-move-trash'))
   })
+  it('每个 source 含由 claudeHome 派生的 historyJsonlPath', () => {
+    for (const s of detectSources()) {
+      expect(s.historyJsonlPath).toMatch(/\.claude[\/\\]history\.jsonl$/)
+      expect(s.historyJsonlPath.replace(/history\.jsonl$/, 'projects')).toBe(s.projectsRoot)
+    }
+  })
 })

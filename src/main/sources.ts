@@ -10,6 +10,7 @@ export interface Source {
   projectsRoot: string
   claudeJsonPath: string
   trashRoot: string
+  historyJsonlPath: string
   exists: boolean
 }
 
@@ -32,6 +33,7 @@ function sourceFromClaudeHome(id: string, label: string, claudeHome: string): So
     projectsRoot: join(claudeHome, '.claude', 'projects'),
     claudeJsonPath: join(claudeHome, '.claude.json'),
     trashRoot: join(claudeHome, '.claude', '.cc-move-trash'),
+    historyJsonlPath: join(claudeHome, '.claude', 'history.jsonl'),
     exists: existsSync(join(claudeHome, '.claude', 'projects')),
   }
 }

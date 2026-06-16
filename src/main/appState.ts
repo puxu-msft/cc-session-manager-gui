@@ -55,12 +55,12 @@ export function migrateLegacyLocalDb(dir: string): void {
   }
 }
 
-export interface Env { db: Db; projectsRoot: string; claudeJsonPath: string; trashRoot: string }
+export interface Env { db: Db; projectsRoot: string; claudeJsonPath: string; trashRoot: string; historyJsonlPath: string }
 
 // 返回当前活动源的运行环境(独立 DB + 该源的 projects/claude.json/trash 路径)。
 export function getEnv(): Env {
   const s = activeSource()
-  return { db: dbFor(s.id), projectsRoot: s.projectsRoot, claudeJsonPath: s.claudeJsonPath, trashRoot: s.trashRoot }
+  return { db: dbFor(s.id), projectsRoot: s.projectsRoot, claudeJsonPath: s.claudeJsonPath, trashRoot: s.trashRoot, historyJsonlPath: s.historyJsonlPath }
 }
 
 // 退出时关闭所有已打开的源 DB。
