@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openDb, type Db } from '../db/db'
-import { planReconcile, planForce } from './historyReconciler'
+import { planReconcile, planForce, executeReconcile } from './historyReconciler'
 
 let dir: string, db: Db
 const histPath = () => join(dir, 'history.jsonl')
@@ -88,5 +88,19 @@ describe('planForce', () => {
   it('已等于 targetPath 的行不产生 op', () => {
     writeFileSync(histPath(), '{"project":"/target","sessionId":"s"}\n')
     expect(planForce(env(), ['s'], '/target').ops).toHaveLength(0)
+  })
+})
+
+describe('executeReconcile', () => {
+  it('执行 plan.ops 改写并落 DB 记录', () => {
+    indexSession('s1', '/new')
+    writeFileSync(histPath(), '{"project":"/old","sessionId":"s1"}\n')
+    const plan = planReconcile(env())
+    const ops = executeReconcile(env(), plan, 'auto')
+    expect(readFileSync(histPath(), 'utf8')).toContain('"project":"/new"')
+    expect(ops).toContainEqual(expect.objectContaining({ oldProject: '/old', newProject: '/new', affectedLines: 1 }))
+    const recs = db.getHistoryRewrites()
+    expect(recs[0]).toMatchObject({ source: 'auto', old_project: '/old', new_project: '/new', affected_lines: 1 })
+    expect(recs[0].session_ids).toContain('s1')
   })
 })

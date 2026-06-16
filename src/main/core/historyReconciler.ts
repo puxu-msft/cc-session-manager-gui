@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { readHistory } from './historyJsonl'
+import { readHistory, applyHistoryRewrite, type ApplyOp, type RewriteOp } from './historyJsonl'
 import { findSessionFile } from './mover'
 import type { Db } from '../db/db'
 
@@ -77,4 +77,17 @@ export function planForce(env: ReconEnv, sessionIds: string[], targetPath: strin
     return { sessionId, oldProject, newProject: targetPath, lineNos }
   })
   return { ops, orphans: [], ambiguous: [], guard: { size: h.size, mtime: h.mtime } }
+}
+
+// 执行 plan:对 ops 调原子改写(用 plan.guard 做并发检测),把每个聚合 RewriteOp 落一条 history_rewrites。
+export function executeReconcile(env: ReconEnv, plan: ReconcilePlan, source: 'auto' | 'force'): RewriteOp[] {
+  const applyOps: ApplyOp[] = plan.ops.map((o) => ({ sessionId: o.sessionId, oldProject: o.oldProject, newProject: o.newProject }))
+  const result = applyHistoryRewrite(env.historyJsonlPath, applyOps, plan.guard)
+  // 多 op 的记录持久化包进一个事务,保证 all-or-nothing(文件已原子改写;记录是 undo 依据,不可只落一半)
+  env.db.transaction(() => {
+    for (const op of result) {
+      env.db.insertHistoryRewrite({ source, oldProject: op.oldProject, newProject: op.newProject, sessionIds: op.sessionIds, affectedLines: op.affectedLines })
+    }
+  })
+  return result
 }
