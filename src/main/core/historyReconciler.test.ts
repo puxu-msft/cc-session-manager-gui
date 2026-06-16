@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openDb, type Db } from '../db/db'
-import { planReconcile } from './historyReconciler'
+import { planReconcile, planForce } from './historyReconciler'
 
 let dir: string, db: Db
 const histPath = () => join(dir, 'history.jsonl')
@@ -74,5 +74,19 @@ describe('planReconcile', () => {
     writeFileSync(histPath(), '{"project":"","sessionId":"s4"}\n')
     const plan = planReconcile(env())
     expect(plan.ambiguous).toContainEqual(expect.objectContaining({ sessionId: 's4' }))
+  })
+})
+
+describe('planForce', () => {
+  it('把指定会话的行按实际旧 project 分组,全部指向 targetPath', () => {
+    writeFileSync(histPath(), '{"project":"/a","sessionId":"s"}\n{"project":"/b","sessionId":"s"}\n{"project":"/z","sessionId":"other"}\n')
+    const plan = planForce(env(), ['s'], '/target')
+    expect(plan.ops).toContainEqual(expect.objectContaining({ sessionId: 's', oldProject: '/a', newProject: '/target' }))
+    expect(plan.ops).toContainEqual(expect.objectContaining({ sessionId: 's', oldProject: '/b', newProject: '/target' }))
+    expect(plan.ops.some((o) => o.sessionId === 'other')).toBe(false)
+  })
+  it('已等于 targetPath 的行不产生 op', () => {
+    writeFileSync(histPath(), '{"project":"/target","sessionId":"s"}\n')
+    expect(planForce(env(), ['s'], '/target').ops).toHaveLength(0)
   })
 })

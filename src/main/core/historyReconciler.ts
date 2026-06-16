@@ -58,3 +58,23 @@ export function planReconcile(env: ReconEnv): ReconcilePlan {
   }
   return plan
 }
+
+// 强制覆盖:把给定 sessionId 的行,按其行内实际旧 project 分组,全部对齐到 targetPath。
+export function planForce(env: ReconEnv, sessionIds: string[], targetPath: string): ReconcilePlan {
+  const want = new Set(sessionIds)
+  const h = readHistory(env.historyJsonlPath)
+  const groups = new Map<string, number[]>() // key: sid\0oldProject
+  for (const rec of h.lines) {
+    const p = rec.parsed
+    if (!p || typeof p.sessionId !== 'string' || !want.has(p.sessionId)) continue
+    const proj = typeof p.project === 'string' ? p.project : ''
+    if (proj === targetPath) continue
+    const k = p.sessionId + '\0' + proj
+    ;(groups.get(k) ?? groups.set(k, []).get(k)!).push(rec.lineNo)
+  }
+  const ops: PlanOp[] = [...groups].map(([k, lineNos]) => {
+    const [sessionId, oldProject] = k.split('\0')
+    return { sessionId, oldProject, newProject: targetPath, lineNos }
+  })
+  return { ops, orphans: [], ambiguous: [], guard: { size: h.size, mtime: h.mtime } }
+}
