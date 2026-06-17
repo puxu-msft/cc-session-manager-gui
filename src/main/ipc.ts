@@ -49,7 +49,7 @@ function runScanWorker(projectsRoot: string, existingRows: unknown[], event: Ipc
 }
 
 export function registerIpc(): void {
-  reconcile(getEnv() as any) // 启动时收尾当前活动源的 pending 移动
+  reconcile(getEnv()) // 启动时收尾当前活动源的 pending 移动
   archiverReconcile(getEnv()) // 启动时收尾当前活动源的 pending 归档/还原
 
   ipcMain.handle('sources:list', () => listSources().map((s) => ({ id: s.id, label: s.label, projectsRoot: s.projectsRoot, exists: s.exists })))
@@ -58,7 +58,7 @@ export function registerIpc(): void {
     abortCurrentScan()
     const active = setActiveSourceId(id)
     const env = getEnv()
-    reconcile(env as any)
+    reconcile(env)
     archiverReconcile(env) // 切源后收尾新活动源的 pending 归档/还原
     return { active, projects: env.db.getProjects() }
   })
@@ -86,10 +86,10 @@ export function registerIpc(): void {
     mkdirSync(p, { recursive: true })
     return listDir(p)
   })
-  ipcMain.handle('move:preview', (_e, ids: string[], target: string) => previewMove(ids, target, getEnv() as any))
-  ipcMain.handle('move:execute', (_e, ids: string[], target: string) => executeMove(ids, target, getEnv() as any))
+  ipcMain.handle('move:preview', (_e, ids: string[], target: string) => previewMove(ids, target, getEnv()))
+  ipcMain.handle('move:execute', (_e, ids: string[], target: string) => executeMove(ids, target, getEnv()))
   ipcMain.handle('moves:list', () => getEnv().db.getMoves())
-  ipcMain.handle('move:undo', (_e, moveId: number) => { const env = getEnv(); undoMove(moveId, env as any); return env.db.getMoves() })
+  ipcMain.handle('move:undo', (_e, moveId: number) => { const env = getEnv(); undoMove(moveId, env); return env.db.getMoves() })
   ipcMain.handle('trash:usage', () => trashUsage(getEnv().trashRoot))
   ipcMain.handle('trash:purge', (_e, moveId?: number) => {
     const env = getEnv()
@@ -97,15 +97,15 @@ export function registerIpc(): void {
     return { moves: env.db.getMoves(), usage: trashUsage(env.trashRoot) }
   })
 
-  ipcMain.handle('history:plan', () => planReconcile(getEnv() as any))
+  ipcMain.handle('history:plan', () => planReconcile(getEnv()))
   ipcMain.handle('history:reconcile', (_e, mode: 'auto' | 'force', sessionIds?: string[], target?: string) => {
-    const env = getEnv() as any
+    const env = getEnv()
     const plan = mode === 'force' ? planForce(env, sessionIds ?? [], target ?? '') : planReconcile(env)
     const result = executeReconcile(env, plan, mode)
     return { result, rewrites: env.db.getHistoryRewrites() }
   })
   ipcMain.handle('history:listRewrites', () => getEnv().db.getHistoryRewrites())
-  ipcMain.handle('history:undoRewrite', (_e, id: number) => { const env = getEnv() as any; undoRewrite(env, id); return env.db.getHistoryRewrites() })
+  ipcMain.handle('history:undoRewrite', (_e, id: number) => { const env = getEnv(); undoRewrite(env, id); return env.db.getHistoryRewrites() })
 
   ipcMain.handle('archive:snapshot', async (_e, sessionIds: string[]) => {
     const env = getEnv(); const out = []
