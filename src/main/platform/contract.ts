@@ -50,3 +50,19 @@ export interface Platform {
   bridge: BridgeServer
   paths: Paths
 }
+
+// 预编译语句的最小抽象:run/get/all 同时支持命名参数对象(run({a:1}))与位置参数(run(1,2))两种调用风格。
+export interface PreparedStatement {
+  run(...params: unknown[]): { lastInsertRowid: number | bigint; changes: number }
+  get(...params: unknown[]): unknown
+  all(...params: unknown[]): unknown[]
+}
+
+// 运行时无关的 SQLite 驱动接口。db repository 仅依赖它;Electron=better-sqlite3,Electrobun=bun:sqlite。
+export interface SqliteDriver {
+  prepare(sql: string): PreparedStatement
+  exec(sql: string): void
+  pragma(source: string): void
+  transaction<T>(fn: () => T): () => T
+  close(): void
+}
