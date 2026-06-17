@@ -68,7 +68,7 @@ export function registerIpc(): void {
 
   ipcMain.handle('refresh:run', async (event: IpcMainInvokeEvent) => {
     const env = getEnv()
-    const existing = env.db.raw.prepare('SELECT * FROM sessions').all() as any[]
+    const existing = env.db.getAllSessionRows()
     const { projects, sessions, aborted } = await runScanWorker(env.projectsRoot, existing, event)
     if (aborted) {
       // 退出/切源时会先中断,在飞刷新走到这里读库可能抛 use-after-close,容错返回空。

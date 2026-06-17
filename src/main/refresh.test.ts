@@ -13,7 +13,7 @@ const line = (o: unknown) => JSON.stringify(o)
 // 复刻 ipc 的 refresh:run 落库链路(不含 Electron/worker 胶水):读现有行 → 用 buildReuse 增量扫描 → applyScanToIndex 写库。
 // 与生产同源:scanAll + buildReuse + applyScanToIndex 都是生产路径里用的同一批函数。
 async function refresh(db: ReturnType<typeof openDb>, projectsRoot: string) {
-  const existing = db.raw.prepare('SELECT * FROM sessions').all() as any[]
+  const existing = db.getAllSessionRows()
   const scan = await scanAll(projectsRoot, { reuse: buildReuse(existing) })
   const diff = applyScanToIndex(db, scan, existing.map((r) => ({ session_id: r.session_id, size_bytes: r.size_bytes, mtime: r.mtime })))
   return { diff, projects: db.getProjects() }
