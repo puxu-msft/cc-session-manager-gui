@@ -91,16 +91,38 @@ export async function snapshotSession(sessionId: string, env: ArchiverEnv): Prom
   return buildVersion(sessionId, 'snapshot', env)
 }
 
+// 删原件前的"真正可还原"闸门(final review 加固):不再只比 content.tar.gz 字节数(那是几行前同一个
+// statSync 自己写入的,等于自己跟自己比,挡不住打包过程中的内容损坏),而是把刚生成的版本包解包到临时校验
+// 目录 → rebuildSymlinks → verifyAgainstManifest,逐条目字节级核对,通过才算"删不可逆原件前确认真正可还原"。
+// 抽成导出小函数以便单测失败分支(造一个 manifest 与 tar 不符的版本目录断言 ok=false)。
+export async function verifyVersionRestorable(
+  archiveRoot: string, sessionId: string, versionId: number,
+): Promise<{ ok: boolean; mismatches: string[] }> {
+  const vdir = join(archiveRoot, sessionId, String(versionId))
+  const tgz = join(vdir, 'content.tar.gz')
+  if (!existsSync(tgz)) return { ok: false, mismatches: ['content.tar.gz 缺失'] }
+  const manifest = JSON.parse(readFileSync(join(vdir, 'manifest.json'), 'utf8')) as Manifest
+  const verifyDir = join(archiveRoot, sessionId, `.verify-${versionId}`)
+  try {
+    rmSync(verifyDir, { recursive: true, force: true })   // 防上次残留
+    mkdirSync(verifyDir, { recursive: true })
+    await unpackTarGz(tgz, verifyDir)
+    rebuildSymlinks(verifyDir, manifest)                  // symlink 不在 tar 里,依 manifest 手动重建
+    return await verifyAgainstManifest(verifyDir, manifest)
+  } finally {
+    try { rmSync(verifyDir, { recursive: true, force: true }) } catch {}
+  }
+}
+
 // 归档 = 构建 archive 版本(complete 且 gz 校验)后,删除 projects 下原件并从索引移除该会话。
-// 删除原件前确认 content.tar.gz 字节数与表记录一致(不可逆操作前的完整性闸门)。
+// 删除原件前真正验证可还原:解包刚生成的版本包并按 manifest 逐条目校验,通过才删不可逆原件(final review 加固)。
 export async function archiveSession(sessionId: string, env: ArchiverEnv): Promise<ArchiveResult> {
   const found = findSessionFile(env.projectsRoot, sessionId)
   const built = await buildVersion(sessionId, 'archive', env)
   if (built.status !== 'done' || !built.versionId || !found) return built
-  const v = env.db.getArchiveVersion(built.versionId)
-  const tgz = join(env.archiveRoot, sessionId, String(built.versionId), 'content.tar.gz')
-  if (!existsSync(tgz) || statSync(tgz).size !== v.gzTotalBytes) {
-    return { sessionId, status: 'failed', versionId: built.versionId, error: '归档包完整性校验失败,原件保留' }
+  const vr = await verifyVersionRestorable(env.archiveRoot, sessionId, built.versionId)
+  if (!vr.ok) {
+    return { sessionId, status: 'failed', versionId: built.versionId, error: `归档包校验失败,原件保留: ${vr.mismatches.join(',')}` }
   }
   // 完整性通过 → 移除原件(jsonl + sidecar 目录)。删除失败则中止:保留原件、不删索引行,避免索引与磁盘漂移
   try {

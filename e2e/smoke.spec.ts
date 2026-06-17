@@ -8,6 +8,8 @@ const EXPECTED_API = [
   'getIndex', 'getSessions', 'refresh', 'listDir', 'makeDir',
   'previewMove', 'executeMove', 'listMoves', 'undoMove',
   'trashUsage', 'purgeTrash', 'onRefreshProgress',
+  'archiveSnapshot', 'archiveArchive', 'archiveListVersions', 'archiveAllVersions',
+  'archiveRestore', 'archiveUndoRestore', 'archiveDeleteVersion', 'archiveUsage',
 ]
 
 let app: ElectronApplication
