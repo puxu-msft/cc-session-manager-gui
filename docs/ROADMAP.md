@@ -25,12 +25,13 @@
 - ✅ 六大契约抽出:`AppHost` / `WindowHost` / `BridgeServer` / `Paths` / `ScanRunner` / `SqliteDriver`(`platform/contract.ts`)。
 - ✅ Electron 各宿主实现就位(`platform/electron/{app,window,bridge,paths,scanRunner}.ts`);`index.ts` 经 `app/bootstrap.ts` 装配,成薄入口。
 - ✅ `repository.ts` 从 `db.ts` 拆出(只依赖 `SqliteDriver`);`appState`/`ipc` 摆脱 electron 直接依赖(Paths/BridgeServer 注入)。
+- ✅ DB 工厂经 `Platform.dbFactory` 注入(Electron 注入 `openDb`,`appState` 摆脱 better-sqlite3 值依赖);共享 repository 已验证在 bun:sqlite 与 better-sqlite3 行为等价(spike)。
 - ✅ `BunSqliteDriver`(`platform/electrobun/sqliteDriver.ts`,bun:sqlite)已写。
 
 ## 🔜 下一步
 
-- **Electrobun 侧实现**:`AppHost` / `WindowHost` / `BridgeServer`(defineRPC)/ `ScanRunner`(Bun)实现 + Electrobun 入口(对应 `index.ts` 的 Electron 装配)。
-- **构建期运行时分流**:当前 `db/db.ts` 的 `openDb` 仍硬接 `BetterSqliteDriver`、`index.ts` 仍硬接 Electron;需按运行时选择装配。
+- **Electrobun 侧实现**:`AppHost` / `WindowHost` / `BridgeServer`(defineRPC)/ `ScanRunner`(Bun)实现 + Electrobun 入口(对应 `index.ts` 的 Electron 装配,提供 bun:sqlite 版 `dbFactory`)。
+- **构建期运行时分流**:当前 `index.ts` 即写死的 Electron 入口;需按运行时选择装配哪套 `Platform` 实现集。
 - **Phase 0 遗留实测**(不阻塞):Electron 侧 `app.getPath('userData')` 运行时实测、EXDEV 跨设备 `rename` fallback 实测(需两挂载点)。
 
 ## 💡 想法 / 未定

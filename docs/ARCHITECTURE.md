@@ -26,16 +26,16 @@ App.tsx 三栏+视图  ─► window.api ─► platform/electron/bridge(ipcMain
 
 ### 运行时契约与装配 `src/main/platform/` + `src/main/app/`
 
-- `platform/contract.ts` — **运行时抽象的真相源**,定义六个接口:`AppHost`(生命周期=Electron `app`)、`WindowHost`(建窗=`BrowserWindow`+preload)、`BridgeServer`(IPC 服务端=`ipcMain.handle`+`sender.send`;handler 签名 `(ctx, ...args)`,`ctx.emit` 单向回推)、`Paths`(`userData()`=`app.getPath`)、`ScanRunner`(后台扫描=`worker_threads`,进度走 `onProgress` 回调)、`SqliteDriver`(`prepare/exec/pragma/transaction/close`)。核心装配只依赖这些接口。
+- `platform/contract.ts` — **运行时抽象的真相源**,定义六个接口:`AppHost`(生命周期=Electron `app`)、`WindowHost`(建窗=`BrowserWindow`+preload)、`BridgeServer`(IPC 服务端=`ipcMain.handle`+`sender.send`;handler 签名 `(ctx, ...args)`,`ctx.emit` 单向回推)、`Paths`(`userData()`=`app.getPath`)、`ScanRunner`(后台扫描=`worker_threads`,进度走 `onProgress` 回调)、`SqliteDriver`(`prepare/exec/pragma/transaction/close`)。`Platform` 把一套实现聚合为 `{appHost, windowHost, bridge, paths, dbFactory}` 交给 bootstrap(`dbFactory: (file)=>Db` 由各运行时提供其 DB 工厂)。核心装配只依赖这些接口。
 - `platform/electron/` — Electron 实现:`app.ts`(`ElectronAppHost`)、`window.ts`(`ElectronWindowHost`,preload 指向 `index.cjs`)、`bridge.ts`(`ElectronBridge`:`ipcMain.handle` + 经 `event.sender` 回推)、`paths.ts`(`electronPaths`)、`scanRunner.ts`(`ElectronScanRunner`:worker_threads)。
 - `platform/electrobun/` — Electrobun/Bun 实现:`sqliteDriver.ts`(`BunSqliteDriver`,`bun:sqlite`,strict 模式)**已写**;app/window/bridge/scanRunner 的 Electrobun 实现待补。
-- `app/bootstrap.ts` — **运行时无关装配**(只写一次):`setName` → `whenReady` 后 `setPaths`/`registerIpc`/`createMainWindow` → `onWindowAllClosed`/`onBeforeQuit`(中断扫描 + 关库)。Electron 与 Electrobun 各传入自己的 `Platform` 实现。
+- `app/bootstrap.ts` — **运行时无关装配**(只写一次):`setName` → `whenReady` 后 `setPaths`/`setDbFactory`/`registerIpc`/`createMainWindow` → `onWindowAllClosed`/`onBeforeQuit`(中断扫描 + 关库)。Electron 与 Electrobun 各传入自己的 `Platform` 实现。
 - `index.ts` — **薄入口**:装配 Electron 的 `Platform` 实现并调 `bootstrap(...)`。Electrobun 入口将以同样方式装配其实现,共享 bootstrap 与全部核心。
 
 ### 主进程编排层 `src/main/`(运行时无关胶水,薄)
 
 - `ipc.ts` — **IPC 契约服务端**:`registerIpc(bridge: BridgeServer)`,全部通道经注入的 `bridge.handle('<channel>', (ctx, …args) => …)` 注册(不再直接依赖 electron);进度经 `ctx.emit('refresh:progress', …)`;启动即 `reconcile`/`archiverReconcile` 收尾 pending;持一个 `ElectronScanRunner` 跑扫描、`terminate()` 即中断。
-- `appState.ts` — 多源运行环境:`getEnv()` 返回当前活动源的 `Env`(独立 `Db` + 该源 projects/claude.json/trash/archive/backups 路径);每源一套 `index-<id>.db`;userData 路径经注入的 `Paths`(`setPaths`/`injectedPaths.userData()`,不再直接依赖 electron);含旧单库 `index.db → index-local.db` 一次性迁移。
+- `appState.ts` — 多源运行环境:`getEnv()` 返回当前活动源的 `Env`(独立 `Db` + 该源 projects/claude.json/trash/archive/backups 路径);每源一套 `index-<id>.db`;userData 路径经注入的 `Paths`(`setPaths`)、DB 创建经注入的 `dbFactory`(`setDbFactory`,Electron 注入 `openDb`),**不再直接依赖 electron 或 better-sqlite3**;含旧单库 `index.db → index-local.db` 一次性迁移。
 - `sources.ts` — 数据源探测:一个源=一套某家目录下的 `.claude`;WSL 下探测 Linux 侧 + Windows 侧(经 `cmd.exe` 取 `%USERPROFILE%`,失败则扫 `/mnt/c/Users`)两套,各自独立。
 - `refresh.ts` — `applyScanToIndex(db, scan, existing)`:刷新落库的**纯函数**(算 diff → 事务内 upsert/删除),供 IPC 与集成测试共用(逻辑与 UI 分离的范例)。
 - `scanWorker.ts` — `worker_threads` 扫描线程入口(由 `ElectronScanRunner` 拉起)。
@@ -56,7 +56,7 @@ App.tsx 三栏+视图  ─► window.api ─► platform/electron/bridge(ipcMain
 
 ### 数据层 `src/main/db/`(repository 模式 + 注入式 driver)
 
-- `db.ts` — **薄壳**:`openDb(file)` = `createRepository(new BetterSqliteDriver(file))`(Electron 路径),并 re-export `createRepository` 与 `Db`/`SessionRow`/`MoveInsert` 类型,保持旧 `import { openDb } from './db/db'` 调用点零改动。
+- `db.ts` — **薄壳**:`openDb(file)` = `createRepository(new BetterSqliteDriver(file))`,即 Electron 入口经 `Platform.dbFactory` 注入的 DB 工厂;并 re-export `createRepository` 与 `Db`/`SessionRow`/`MoveInsert` 类型,保持旧 `import { openDb } from './db/db'` 调用点零改动。
 - `repository.ts` — `createRepository(driver: SqliteDriver)`:领域 repository,**只依赖 `SqliteDriver` 接口、不得 import 任何具体驱动**;所有 SQL 与查询方法集中于此;含 `WAL`、按 `SCHEMA_VERSION` 的增量 schema 迁移(`hasColumn` 检测 + `ALTER TABLE RENAME COLUMN`)。
 - `driver.ts` — `BetterSqliteDriver implements SqliteDriver`:**生产代码里唯一 import `better-sqlite3` 的地方**(对称地,`bun:sqlite` 只出现在 `platform/electrobun/sqliteDriver.ts`)。
 - `schema.ts` — `SCHEMA_VERSION`(当前 3)与 `SCHEMA_SQL`(全表 DDL)。
@@ -84,7 +84,7 @@ schema v3,9 张表:`projects` / `sessions`(索引镜像;真相永远是磁盘 js
 
 ## 双运行时改造现状
 
-抽象缝**已落地**:`AppHost`/`WindowHost`/`BridgeServer`/`Paths`/`ScanRunner`/`SqliteDriver` 六契约定义于 `platform/contract.ts`,Electron 侧实现全部就位,`index.ts` 经 `bootstrap` 装配;`BunSqliteDriver`(bun:sqlite)已写。**尚未做**:Electrobun 侧 `AppHost`/`WindowHost`/`BridgeServer`/`ScanRunner` 实现、Electrobun 入口、构建期运行时分流(当前 `openDb` 仍硬接 `BetterSqliteDriver`、`index.ts` 仍硬接 Electron)。进度与下一步见 [ROADMAP.md](ROADMAP.md);设计见双运行时 spec。
+抽象缝**已落地**:`AppHost`/`WindowHost`/`BridgeServer`/`Paths`/`ScanRunner`/`SqliteDriver` 六契约定义于 `platform/contract.ts`,Electron 侧实现全部就位,`index.ts` 经 `bootstrap` 装配 `Platform`(含 `dbFactory`);`BunSqliteDriver`(bun:sqlite)已写,DB 工厂也已注入化(`Platform.dbFactory`,Electron 入口注入 `openDb`/better-sqlite3)。**尚未做**:Electrobun 侧 `AppHost`/`WindowHost`/`BridgeServer`/`ScanRunner` 实现与入口(提供 bun:sqlite 版 `dbFactory`)、构建期运行时分流(按运行时选择装配哪套 `Platform`;当前 `index.ts` 即写死的 Electron 入口)。进度与下一步见 [ROADMAP.md](ROADMAP.md);设计见双运行时 spec。
 
 ## 关键文件 → 主题(配套 spec)
 
@@ -98,4 +98,4 @@ schema v3,9 张表:`projects` / `sessions`(索引镜像;真相永远是磁盘 js
 
 ---
 
-> 基准:HEAD `65f92a9`(2026-06-18,运行时解耦重构进行中,`platform/**` 有在途改动)。
+> 基准:对准至 `29c9113`(2026-06-18,运行时解耦重构进行中,`platform/**` 仍可能有在途改动)。
