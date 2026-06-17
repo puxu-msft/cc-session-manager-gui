@@ -56,8 +56,8 @@ describe('db', () => {
     const id = db.insertMove({ sessionId: 's1', projectName: '/p', sourceDirAbs: '/p', sourceFolder: '-p', sourceCwd: '/p', targetDirAbs: '/q', targetFolder: '-q', trashPath: '/t', claudeJsonUpdated: false })
     db.insertCwdChanges(id, [{ fileRel: 's1.jsonl', lineNo: 2, oldCwd: '/p', newCwd: '/q' }])
     db.insertSnapshotLines(id, [{ fileRel: 's1.jsonl', lineNo: 2, content: '{"cwd":"/p"}' }])
-    const cwdRows = db.raw.prepare('SELECT * FROM cwd_changes WHERE move_id=?').all(id) as any[]
-    const snapRows = db.raw.prepare('SELECT * FROM snapshot_lines WHERE move_id=?').all(id) as any[]
+    const cwdRows = db.driver.prepare('SELECT * FROM cwd_changes WHERE move_id=?').all(id) as any[]
+    const snapRows = db.driver.prepare('SELECT * FROM snapshot_lines WHERE move_id=?').all(id) as any[]
     expect(cwdRows.length).toBe(1)
     expect(cwdRows[0].new_cwd).toBe('/q')
     expect(snapRows.length).toBe(1)
@@ -104,13 +104,13 @@ describe('db', () => {
     const file = join(mkdtempSync(join(tmpdir(), 'db-')), 'idx.db')
     const a = openDb(file)
     a.upsertProject({ projectPathAbs: '/p', folderName: '-p', existsOnDisk: true, inClaudeJson: false, sessionCount: 1, totalSizeBytes: 10, lastActivityAt: 't' })
-    a.raw.close()
+    a.close()
     // 重开同一文件:meta 已存在 → 走 if(!ver) 的 false 分支,不再 INSERT
     const b = openDb(file)
-    const metaRows = b.raw.prepare('SELECT * FROM meta').all() as any[]
+    const metaRows = b.driver.prepare('SELECT * FROM meta').all() as any[]
     expect(metaRows.length).toBe(1)
     expect(b.getProjects().length).toBe(1)
-    b.raw.close()
+    b.close()
   })
 
   it('getSessionCwd 按主键返回 cwd,缺失返回 null', () => {
@@ -181,12 +181,12 @@ describe('archive_versions / restores', () => {
     raw.close()
     // openDb 触发 v2→v3 迁移
     const db = openDb(file)
-    const cols = (db.raw.prepare('PRAGMA table_info(archive_versions)').all() as { name: string }[]).map((c) => c.name)
+    const cols = (db.driver.prepare('PRAGMA table_info(archive_versions)').all() as { name: string }[]).map((c) => c.name)
     expect(cols).toContain('compressed_bytes')
     expect(cols).not.toContain('gz_total_bytes')
     // 数据保留 + 版本号回写
-    expect((db.raw.prepare('SELECT compressed_bytes FROM archive_versions WHERE session_id=?').get('s1') as any).compressed_bytes).toBe(999)
-    expect((db.raw.prepare('SELECT schema_version FROM meta').get() as any).schema_version).toBe(3)
-    db.raw.close()
+    expect((db.driver.prepare('SELECT compressed_bytes FROM archive_versions WHERE session_id=?').get('s1') as any).compressed_bytes).toBe(999)
+    expect((db.driver.prepare('SELECT schema_version FROM meta').get() as any).schema_version).toBe(3)
+    db.close()
   })
 })
