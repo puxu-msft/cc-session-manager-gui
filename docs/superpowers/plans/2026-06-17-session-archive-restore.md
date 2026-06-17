@@ -161,6 +161,8 @@ describe('archive_versions / restores', () => {
     db.setArchiveVersionStatus(vid, 'complete')
     expect(db.getArchiveVersion(vid).status).toBe('complete')
     expect(db.getArchiveVersion(vid).sessionId).toBe('s1')
+    db.setArchiveVersionGzBytes(vid, 4096)
+    expect(db.getArchiveVersion(vid).gzTotalBytes).toBe(4096)
     expect(db.getPendingArchiveVersions()).toHaveLength(0)
     db.deleteArchiveVersion(vid)
     expect(db.getArchiveVersions('s1')).toHaveLength(0)
@@ -374,7 +376,7 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, symlinkSync, readlinkSync, lstatSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildManifest, packTree, unpackTarGz, verifyAgainstManifest } from './tarPack'
+import { buildManifest, packTree, unpackTarGz, rebuildSymlinks, verifyAgainstManifest } from './tarPack'
 
 function srcTree() {
   const d = mkdtempSync(join(tmpdir(), 'tarsrc-'))
@@ -407,6 +409,7 @@ describe('tarPack', () => {
     await packTree(d, ['s1.jsonl', 's1'], tgz)
     const dest = join(out, 'unpacked'); mkdirSync(dest)
     await unpackTarGz(tgz, dest)
+    rebuildSymlinks(dest, manifest)
     expect(readFileSync(join(dest, 's1.jsonl'))).toEqual(readFileSync(join(d, 's1.jsonl')))
     expect(lstatSync(join(dest, 's1', 'linky')).isSymbolicLink()).toBe(true)
     expect(readlinkSync(join(dest, 's1', 'linky'))).toBe('/some/external/target')
@@ -421,6 +424,7 @@ describe('tarPack', () => {
     await packTree(d, ['s1.jsonl', 's1'], tgz)
     const dest = join(out, 'unpacked'); mkdirSync(dest)
     await unpackTarGz(tgz, dest)
+    rebuildSymlinks(dest, manifest)
     writeFileSync(join(dest, 's1.jsonl'), 'tampered')
     const res = await verifyAgainstManifest(dest, manifest)
     expect(res.ok).toBe(false)
@@ -440,8 +444,8 @@ Expected: FAIL —「buildManifest is not a function」。
 
 ```typescript
 import { createHash } from 'node:crypto'
-import { createReadStream, readdirSync, lstatSync, readlinkSync } from 'node:fs'
-import { join } from 'node:path'
+import { createReadStream, readdirSync, lstatSync, readlinkSync, mkdirSync, symlinkSync, rmSync } from 'node:fs'
+import { join, dirname } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import * as tar from 'tar'
 
@@ -483,13 +487,26 @@ export async function buildManifest(cwd: string, roots: string[]): Promise<Manif
   return { entries }
 }
 
-// 流式 tar + gzip。follow:false → symlink 作为 symlink 入档;portable 去除 owner/mtime 噪声
+// 流式 tar + gzip。symlink **不入 tar**——node-tar extract 默认丢弃指向外部/绝对路径的 symlink(防 tar-slip),
+// 故用 filter 排除 symlink,改由 manifest 记录 + 解包后 rebuildSymlinks 手动重建,确保任意 symlink 字节级保真。
+// portable 去除 owner/mtime 噪声(只改 tar header,不改文件内容字节,故内容 sha256 恒等)。
 export async function packTree(cwd: string, roots: string[], outTarGz: string): Promise<void> {
-  await tar.create({ gzip: true, file: outTarGz, cwd, portable: true, follow: false, noMtime: false }, roots)
+  await tar.create({ gzip: true, file: outTarGz, cwd, portable: true, follow: false, filter: (_p, st) => !st.isSymbolicLink() }, roots)
 }
 
 export async function unpackTarGz(tarGz: string, destDir: string): Promise<void> {
   await tar.extract({ file: tarGz, cwd: destDir })
+}
+
+// 解包后依 manifest 重建所有 symlink 条目(它们不在 tar 里)。先清占位再 symlink,确保 readlink 与 manifest 恒等。
+export function rebuildSymlinks(dir: string, manifest: Manifest): void {
+  for (const e of manifest.entries) {
+    if (e.type !== 'symlink' || e.linkTarget == null) continue
+    const abs = join(dir, e.rel)
+    try { rmSync(abs, { force: true }) } catch {}
+    mkdirSync(dirname(abs), { recursive: true })
+    symlinkSync(e.linkTarget, abs)
+  }
 }
 
 // 解包目录按 manifest 逐条目校验:file 比 size+流式 sha256;symlink 比 readlink 目标;dir 比存在性
@@ -590,6 +607,15 @@ describe('snapshotSession', () => {
     expect(res.status).toBe('skipped')
     expect(db.getArchiveVersions('s1')).toHaveLength(0)
   })
+
+  it('无 cwd 的会话被拒绝归档(将无法还原)', async () => {
+    const w = world(); const db = openDb(':memory:')
+    writeFileSync(w.jsonl, JSON.stringify({ type: 'user', message: { content: 'no cwd here' } }) + '\n')
+    const old = new Date(Date.now() - 600_000); utimesSync(w.jsonl, old, old)
+    const res = await snapshotSession('s1', envOf(w, db))
+    expect(res.status).toBe('skipped')
+    expect(db.getArchiveVersions('s1')).toHaveLength(0)
+  })
 })
 ```
 
@@ -647,6 +673,8 @@ async function buildVersion(sessionId: string, kind: 'snapshot' | 'archive', env
   if (Date.now() - st0.mtimeMs < LIVE_MTIME_THRESHOLD_MS) return { sessionId, status: 'skipped', error: '会话疑似活跃,请先关闭' }
 
   const meta = await scanSessionFile(found.jsonl)
+  // 空 cwd 护栏(对齐 mover 的空 srcRoot 护栏):还原依赖原 cwd 定位写回目标,无 cwd 的版本永远还原不了,直接拒绝
+  if (!meta.cwd) return { sessionId, status: 'skipped', error: '会话无 cwd,无法归档(将无法还原)' }
   const folderName = basename(found.folder)
   const sidecarDir = join(found.folder, sessionId)
   const hasSidecar = existsSync(sidecarDir)
@@ -789,7 +817,7 @@ export async function archiveSession(sessionId: string, env: ArchiverEnv): Promi
 }
 ```
 
-> 删原件前的注释更正:任一步在「删除原件」之前失败,原件原样未动,版本要么 pending(被 reconcile 清)要么 complete(成了一个普通 archive 版本,无害)。删除原件失败则返回 failed 且**保留原件、不删 sessions 行**,可安全重试;重试会再建一个 archive 版本(允许重复,旧版本可在时间线手动删)。
+> 删原件前后的重试语义:任一步在「删除原件」之前失败,原件原样未动,版本要么 pending(被 reconcile 清)要么 complete(成了一个普通 archive 版本,无害)。删原件失败 → 返回 failed、保留原件、不删 sessions 行;此时重试归档会**再建一个新 archive 版本**(原件仍在,不做版本去重,旧版本可手动删)。删原件已成功的会话重试时 `findSessionFile` 返回 null → 直接 skipped,不会重复归档。
 >
 > **完整性校验(对 spec §5 包级 `gz_sha256` 的有意偏离):** 真正的内容完整性由 manifest 逐条目 sha256(还原解包后逐文件校验,Task7)保证;归档删原件前的包级闸门只查 `content.tar.gz` 字节数 == `gzTotalBytes`。放弃 spec §5 的包级 `gz_sha256`——gzip 头含 mtime/OS 等非确定性字节,包级哈希不稳定且非必要。
 >
@@ -910,24 +938,26 @@ Expected: FAIL —「restoreVersion is not a function」。
 以下两个 import 合并到 archiver.ts 顶部 import 区(`Manifest` 已在 Task 5 顶部 import,勿重复):
 
 ```typescript
-import { unpackTarGz, verifyAgainstManifest } from './tarPack'
+import { unpackTarGz, rebuildSymlinks, verifyAgainstManifest } from './tarPack'
 import { encodePath } from './pathCodec'
 
 export interface RestoreResult { status: 'done' | 'skipped' | 'failed'; restoreId?: number; error?: string }
 
-// 还原前的目标文件夹冲突 / 编码碰撞预检(对照 mover.previewMove 的三道规则)
+// 还原前的目标文件夹冲突 / 编码碰撞预检(对照 mover.previewMove 的三道规则:只 scan 一个代表样本,不全量扫)
 async function restorePrecheck(targetFolder: string, sessionId: string, sourceCwd: string): Promise<string | null> {
   if (!existsSync(targetFolder)) return null
   if (!statSync(targetFolder).isDirectory()) return '目标文件夹路径被非目录文件占用'
-  for (const f of readdirSync(targetFolder)) {
-    if (!f.endsWith('.jsonl')) continue
-    const m = await scanSessionFile(join(targetFolder, f))
-    if (f === `${sessionId}.jsonl`) {
-      // 自身旧件:整体替换会备份它,通常放行;但若其真实 cwd 与本版本不同,说明是另一来源的同 id 会话 → 阻断(spec §6.3 第三道)
-      if (m.cwd && m.cwd !== sourceCwd) return `目标处同 id 会话的 cwd(${m.cwd})与版本不一致,疑似另一来源,已阻断`
-      continue
-    }
-    if (m.cwd && m.cwd !== sourceCwd) return `目标文件夹已被 ${m.cwd} 占用(编码碰撞)`
+  // 自身旧件:整体替换会备份它,通常放行;但若其真实 cwd 与本版本不同 → 疑似另一来源同 id,阻断(spec §6.3 第三道)
+  const selfJsonl = join(targetFolder, `${sessionId}.jsonl`)
+  if (existsSync(selfJsonl)) {
+    const ms = await scanSessionFile(selfJsonl)
+    if (ms.cwd && ms.cwd !== sourceCwd) return `目标处同 id 会话的 cwd(${ms.cwd})与版本不一致,疑似另一来源,已阻断`
+  }
+  // 编码碰撞:取一个非自身的代表 jsonl(对齐 mover.previewMove 只 scan 一个样本,避免对大目标全量 scan),cwd ≠ 目标则阻断
+  const other = readdirSync(targetFolder).find((f) => f.endsWith('.jsonl') && f !== `${sessionId}.jsonl`)
+  if (other) {
+    const mo = await scanSessionFile(join(targetFolder, other))
+    if (mo.cwd && mo.cwd !== sourceCwd) return `目标文件夹已被 ${mo.cwd} 占用(编码碰撞)`
   }
   return null
 }
@@ -961,9 +991,10 @@ export async function restoreVersion(versionId: number, env: ArchiverEnv): Promi
   env.db.setRestoreBackupPath(restoreId, backupPath)
   const staging = join(env.archiveRoot, sessionId, `.restore-staging-${restoreId}`)
   try {
-    // 1) staging 解包 + 校验
+    // 1) staging 解包 + 重建 symlink + 校验
     mkdirSync(staging, { recursive: true })
     await unpackTarGz(tgz, staging)
+    rebuildSymlinks(staging, manifest)   // symlink 不在 tar 里,依 manifest 手动重建
     const vr = await verifyAgainstManifest(staging, manifest)
     if (!vr.ok) { rmSync(staging, { recursive: true, force: true }); env.db.setRestoreStatus(restoreId, 'failed'); return { status: 'failed', restoreId, error: `校验失败: ${vr.mismatches.join(',')}` } }
     env.db.setRestorePhase(restoreId, 'staging_done')
@@ -1225,6 +1256,7 @@ export function archiverReconcile(env: ArchiverEnv): void {
       const bMain = join(r.backupPath, `${sessionId}.jsonl`), bSidecar = join(r.backupPath, sessionId)
       if (existsSync(bMain)) safeRename(bMain, join(targetFolder, `${sessionId}.jsonl`))
       if (existsSync(bSidecar)) safeRename(bSidecar, join(targetFolder, sessionId))
+      try { rmSync(r.backupPath, { recursive: true, force: true }) } catch {}   // 备份已搬回,清掉空壳
     }
     try { rmSync(staging, { recursive: true, force: true }) } catch {}
     env.db.setRestoreStatus(r.id, 'failed')

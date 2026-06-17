@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS restores (
 6. **移除原件:** 版本 `complete`,且包文件完整性校验(`content.tar.gz` 存在、字节数与 `manifest` 的 `gz_sha256` 一致)通过后,删除 `projects/<source_folder>/<id>.jsonl` 与 `<id>/` 子树。
 7. **更新索引:** 删/标记该 `sessions` 行(归档会话从活动列表消失;归属信息已冗余在 `archive_versions`,时间线不依赖该行存活)。
 
-> 任一步在「删除原件」之前失败:原件原样未动,版本要么 pending(被 reconcile 清)要么 complete(成了一个普通快照,无害)。删除原件本身用 `rm`,失败则该会话仍在活动区,版本已 complete,下次重试归档幂等(版本已存在则跳过 1~5)。
+> 任一步在「删除原件」之前失败:原件原样未动,版本要么 pending(被 reconcile 清)要么 complete(成了一个普通 archive 版本,无害)。删原件失败则返回 failed、保留原件;此时重试归档会再建一个新 archive 版本(不做版本去重,旧版本可手动删)。删原件已成功的会话重试时因原件不存在直接 skipped。
 
 ### 6.3 还原(restore) — 原子的「整体替换」
 
