@@ -38,7 +38,7 @@ describe('archiveSession', () => {
 // 删原件前"真正可还原"闸门(final review 加固)的直接单测:用 tarPack 造版本目录,
 // 好包断言 ok=true;manifest 与 tar 内容不符的坏包断言 ok=false(原件应被保留)。
 describe('verifyVersionRestorable', () => {
-  // 造一个版本目录 <archiveRoot>/<sid>/<vid>/{content.tar.gz, manifest.json}
+  // 造一个版本目录 <archiveRoot>/<sid>/<vid>/{content.tar.zst, manifest.json}
   function makeVersionDir(tamper: boolean) {
     const home = mkdtempSync(join(tmpdir(), 'verify-'))
     const archiveRoot = join(home, 'archive')
@@ -56,7 +56,7 @@ describe('verifyVersionRestorable', () => {
     const c = makeVersionDir(false)
     const roots = [`${c.sessionId}.jsonl`, c.sessionId]
     const manifest = await buildManifest(c.src, roots)
-    await packTree(c.src, roots, join(c.vdir, 'content.tar.gz'))
+    await packTree(c.src, roots, join(c.vdir, 'content.tar.zst'))
     writeFileSync(join(c.vdir, 'manifest.json'), JSON.stringify(manifest))
     const res = await verifyVersionRestorable(c.archiveRoot, c.sessionId, c.versionId)
     expect(res).toEqual({ ok: true, mismatches: [] })
@@ -68,7 +68,7 @@ describe('verifyVersionRestorable', () => {
     const c = makeVersionDir(true)
     const roots = [`${c.sessionId}.jsonl`, c.sessionId]
     const manifest = await buildManifest(c.src, roots)
-    await packTree(c.src, roots, join(c.vdir, 'content.tar.gz'))
+    await packTree(c.src, roots, join(c.vdir, 'content.tar.zst'))
     // 篡改主 jsonl 条目的 sha256,使解包内容与 manifest 不符
     const bad = {
       entries: manifest.entries.map((e) =>
@@ -81,7 +81,7 @@ describe('verifyVersionRestorable', () => {
     expect(res.mismatches).toContain(`${c.sessionId}.jsonl`)
   })
 
-  it('包缺失:content.tar.gz 不存在 → ok=false', async () => {
+  it('包缺失:content.tar.zst 不存在 → ok=false', async () => {
     const c = makeVersionDir(false)
     writeFileSync(join(c.vdir, 'manifest.json'), JSON.stringify({ entries: [] }))
     const res = await verifyVersionRestorable(c.archiveRoot, c.sessionId, c.versionId)
@@ -91,7 +91,7 @@ describe('verifyVersionRestorable', () => {
   it('manifest.json 损坏(非法 JSON)→ ok=false 且不抛异常', async () => {
     const c = makeVersionDir(false)
     const roots = [`${c.sessionId}.jsonl`, c.sessionId]
-    await packTree(c.src, roots, join(c.vdir, 'content.tar.gz'))
+    await packTree(c.src, roots, join(c.vdir, 'content.tar.zst'))
     writeFileSync(join(c.vdir, 'manifest.json'), '{ not valid json')
     const res = await verifyVersionRestorable(c.archiveRoot, c.sessionId, c.versionId)
     expect(res.ok).toBe(false)

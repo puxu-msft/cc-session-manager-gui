@@ -7,7 +7,7 @@ export default defineConfig({
     resolve: { alias: { '@shared': resolve('src/shared') } },
     build: {
       rollupOptions: {
-        external: ['better-sqlite3'],
+        external: ['better-sqlite3', 'zstd-napi'],
         // 除主进程入口外,额外打包扫描 worker 为同目录下的 scanWorker.js,供 worker_threads 加载。
         input: {
           index: resolve('src/main/index.ts'),

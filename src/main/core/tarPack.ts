@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
-import { createReadStream, readdirSync, lstatSync, readlinkSync, mkdirSync, symlinkSync, rmSync } from 'node:fs'
+import { createReadStream, createWriteStream, readdirSync, lstatSync, readlinkSync, mkdirSync, symlinkSync, rmSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import * as tar from 'tar'
+import { CompressStream, DecompressStream } from 'zstd-napi'
 
 export interface ManifestEntry {
   rel: string
@@ -42,15 +43,30 @@ export async function buildManifest(cwd: string, roots: string[]): Promise<Manif
   return { entries }
 }
 
-// 流式 tar + gzip。symlink **不入 tar**——node-tar extract 默认丢弃指向外部/绝对路径的 symlink(防 tar-slip),
+// zstd 压缩参数(用 zstd-napi 的完整 Zstandard 能力,优于内置 gzip):
+// - compressionLevel 19:接近最高档,会话文本日志压缩比远优于 gzip;zstd 解压速度与级别无关,还原不受影响。
+// - enableLongDistanceMatching:会话日志重复性高(相似工具输出/重复路径),LDM 进一步提升压缩比。
+// - nbWorkers 2:多线程压缩,加速大 jsonl(可达 100MB+)。
+const ZSTD_PARAMS = { compressionLevel: 19, enableLongDistanceMatching: true, nbWorkers: 2 }
+
+// 流式 tar → zstd 压缩 → 文件。symlink **不入 tar**——node-tar extract 默认丢弃指向外部/绝对路径的 symlink(防 tar-slip),
 // 故用 filter 排除 symlink,改由 manifest 记录 + 解包后 rebuildSymlinks 手动重建,确保任意 symlink 字节级保真。
-// portable 去除 owner/mtime 噪声(只改 tar header,不改文件内容字节,故内容 sha256 恒等)。
-export async function packTree(cwd: string, roots: string[], outTarGz: string): Promise<void> {
-  await tar.create({ gzip: true, file: outTarGz, cwd, portable: true, follow: false, filter: (_p, st) => !st.isSymbolicLink() }, roots)
+// portable 去除 owner/mtime 噪声(只改 tar header,不改文件内容字节,故内容 sha256 恒等)。全程流式,绝不把大文件整体读入内存。
+export async function packTree(cwd: string, roots: string[], outZst: string): Promise<void> {
+  await pipeline(
+    tar.create({ cwd, portable: true, follow: false, filter: (_p, st) => !st.isSymbolicLink() }, roots),
+    new CompressStream(ZSTD_PARAMS),
+    createWriteStream(outZst),
+  )
 }
 
-export async function unpackTarGz(tarGz: string, destDir: string): Promise<void> {
-  await tar.extract({ file: tarGz, cwd: destDir })
+// 流式 文件 → zstd 解压 → tar 解包。
+export async function unpackZst(zstPath: string, destDir: string): Promise<void> {
+  await pipeline(
+    createReadStream(zstPath),
+    new DecompressStream(),
+    tar.extract({ cwd: destDir }),
+  )
 }
 
 // 解包后依 manifest 重建所有 symlink 条目(它们不在 tar 里)。先清占位再 symlink,确保 readlink 与 manifest 恒等。

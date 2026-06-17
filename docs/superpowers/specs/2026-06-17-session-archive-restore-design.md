@@ -39,7 +39,7 @@
 | 目录(每源各一份) | 用途 | 状态 |
 |---|---|---|
 | `<claudeHome>/.claude/.cc-move-trash/` | **移动**的原件备份 | 既有,本设计不碰 |
-| `<claudeHome>/.claude/.cc-move-archive/<sessionId>/<versionId>/` | **归档库:** 每版本一个目录,内含 `content.tar.gz` + `manifest.json` | 新增 |
+| `<claudeHome>/.claude/.cc-move-archive/<sessionId>/<versionId>/` | **归档库:** 每版本一个目录,内含 `content.tar.zst` + `manifest.json` | 新增 |
 | `<claudeHome>/.claude/.cc-move-backups/<restoreId>-<sessionId>/` | **还原安全网:** 被还原触碰的现状文件/目录整体搬入,保留相对布局 | 新增 |
 
 **派生链(关键,避免 history.jsonl 踩过的 `homedir()` 硬编码坑):**
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS restores (
 
 **版本包结构** `<archiveRoot>/<sessionId>/<versionId>/`:
 
-- `content.tar.gz` — 整棵会话子树流式 tar + gzip。用 tar **不跟随 symlink**(`follow:false`):symlink 仅以「链接类型 + 目标字符串」入档,绝不解引用其内容。损坏行(NUL/截断)字节级原样入档。
+- `content.tar.zst` — 整棵会话子树流式 tar + zstd 压缩(zstd-napi:level 19 + 多线程 + long-distance matching)。用 tar **不跟随 symlink**(`follow:false`):symlink 仅以「链接类型 + 目标字符串」入档,绝不解引用其内容。损坏行(NUL/截断)字节级原样入档。
 - `manifest.json` — 逐条目记录:相对路径、类型(`file` / `dir` / `symlink`)、原始字节数、内容 `sha256`(symlink 记目标字符串的 sha256);外加包级 `gz_sha256`。还原时据此逐条目校验。
 
 ## 6. 算法
@@ -106,14 +106,14 @@ CREATE TABLE IF NOT EXISTS restores (
 
 1. **活跃保护:** stat `<id>.jsonl`,mtime 在 60s 内 → 拒绝并提示先关闭会话。
 2. **开 pending 版本行:** 插 `archive_versions(kind=snapshot, status=pending)`,得 `versionId`。
-3. **构建到 staging:** 在 `<archiveRoot>/<sessionId>/.staging-<versionId>/` 流式 tar+gzip 整棵子树,边写边算每条目 sha256 → `manifest.json`;`fsync`。
+3. **构建到 staging:** 在 `<archiveRoot>/<sessionId>/.staging-<versionId>/` 流式 tar+zstd 整棵子树,边写边算每条目 sha256 → `manifest.json`;`fsync`。
 4. **防撕裂校验:** 重新 stat `<id>.jsonl` 与子树关键文件,若 size/mtime 较步骤 1 有变 → 判定「快照期间被写」,**删 staging 与该 pending 版本行**,提示重试。
 5. **提交:** staging 目录 `rename` 到正式 `<versionId>/`;置 `status=complete`。原件不动。
 
 ### 6.2 归档(archive)
 
 1~5 同快照,但 `kind=archive`,且步骤 1 活跃则**直接拒绝**(不可逆操作不冒险)。
-6. **移除原件:** 版本 `complete`,且包文件完整性校验(`content.tar.gz` 存在、字节数与 `manifest` 的 `gz_sha256` 一致)通过后,删除 `projects/<source_folder>/<id>.jsonl` 与 `<id>/` 子树。
+6. **移除原件:** 版本 `complete`,且包文件完整性校验(`content.tar.zst` 存在、字节数与 `manifest` 的 `gz_sha256` 一致)通过后,删除 `projects/<source_folder>/<id>.jsonl` 与 `<id>/` 子树。
 7. **更新索引:** 删/标记该 `sessions` 行(归档会话从活动列表消失;归属信息已冗余在 `archive_versions`,时间线不依赖该行存活)。
 
 > 任一步在「删除原件」之前失败:原件原样未动,版本要么 pending(被 reconcile 清)要么 complete(成了一个普通 archive 版本,无害)。删原件失败则返回 failed、保留原件;此时重试归档会再建一个新 archive 版本(不做版本去重,旧版本可手动删)。删原件已成功的会话重试时因原件不存在直接 skipped。
@@ -121,13 +121,13 @@ CREATE TABLE IF NOT EXISTS restores (
 ### 6.3 还原(restore) — 原子的「整体替换」
 
 前置预检(复用 mover 三道,见 `mover.ts`):
-- **版本可用:** 目标版本 `status=complete`;`manifest.json` 与 `content.tar.gz` 存在。
+- **版本可用:** 目标版本 `status=complete`;`manifest.json` 与 `content.tar.zst` 存在。
 - **活跃保护:** 目标位置若已存在同 id 会话且活跃 → 拒绝。
 - **冲突 / 编码碰撞:** 目标文件夹 `encode(source_cwd)` 内若已有**不同真实 cwd** 的会话 → 阻断(有损编码碰撞);若已有同 id 但属另一来源 → 阻断。
 
 提交(staging → 备份现状 → 原子换入,全程 `restores` 记 `phase`):
 1. 插 `restores(status=pending, phase=null)`,得 `restoreId`;`backup_path = <backupsRoot>/<restoreId>-<sessionId>/`。
-2. **staging:** 解压 `content.tar.gz` 到 `<archiveRoot>/<sessionId>/.restore-staging-<restoreId>/`;逐条目按 `manifest` 校验 sha256 与字节数。任一不符 → **中止,不触碰目标、不建备份**,置 `failed`。校验通过 → `phase=staging_done`。
+2. **staging:** 解压 `content.tar.zst` 到 `<archiveRoot>/<sessionId>/.restore-staging-<restoreId>/`;逐条目按 `manifest` 校验 sha256 与字节数。任一不符 → **中止,不触碰目标、不建备份**,置 `failed`。校验通过 → `phase=staging_done`。
 3. **备份现状(整体替换的关键):** 把目标 `<id>.jsonl` 与整个 `<id>/` 子树里**所有现存条目**(= 当前磁盘全集,不只是版本里有的)`rename` 进 `backup_path`,保留相对布局。归档移除过原件时此处可能为空。完成 → `phase=backup_done`。
 4. **换入:** staging 目录内容 `rename` 到目标位置。完成 → `phase=commit_done`;`status=done`。
 
@@ -165,7 +165,7 @@ CREATE TABLE IF NOT EXISTS restores (
 | 模块 | 职责 | 备注 |
 |---|---|---|
 | `src/main/core/archiver.ts` | snapshot / archive / restore / undoRestore / reconcile 核心 | 纯逻辑,跑临时假 `~/.claude` 单测;**不复用 mover,不改写 cwd** |
-| `src/main/core/tarPack.ts`(或内联) | 流式 tar+gzip 打包 / 解包 + manifest 生成校验 | 用成熟 tar 库(`follow:false`);symlink 不解引用 |
+| `src/main/core/tarPack.ts`(或内联) | 流式 tar+zstd 打包 / 解包 + manifest 生成校验 | 用成熟 tar 库(`follow:false`);symlink 不解引用 |
 | `src/main/sources.ts` | `Source` 加 `archiveRoot` / `backupsRoot` | 一处派生 |
 | `src/main/appState.ts` | `Env` 透传两根;`getEnv()` 填充 | — |
 | `src/main/db/schema.ts` + `db.ts` | `SCHEMA_VERSION→2`;两表 SQL + snake_case 回填读写方法 | 沿用 `history_rewrites` 同款 rowMap 风格 |

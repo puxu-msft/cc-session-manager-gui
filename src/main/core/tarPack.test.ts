@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, symlinkSync, readlinkSync, lstatSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildManifest, packTree, unpackTarGz, rebuildSymlinks, verifyAgainstManifest } from './tarPack'
+import { buildManifest, packTree, unpackZst, rebuildSymlinks, verifyAgainstManifest } from './tarPack'
 
 function srcTree() {
   const d = mkdtempSync(join(tmpdir(), 'tarsrc-'))
@@ -30,11 +30,11 @@ describe('tarPack', () => {
   it('打包→解包后字节恒等(含损坏行)且 symlink 仍是 symlink', async () => {
     const d = srcTree()
     const out = mkdtempSync(join(tmpdir(), 'tarout-'))
-    const tgz = join(out, 'content.tar.gz')
+    const zst = join(out, 'content.tar.zst')
     const manifest = await buildManifest(d, ['s1.jsonl', 's1'])
-    await packTree(d, ['s1.jsonl', 's1'], tgz)
+    await packTree(d, ['s1.jsonl', 's1'], zst)
     const dest = join(out, 'unpacked'); mkdirSync(dest)
-    await unpackTarGz(tgz, dest)
+    await unpackZst(zst, dest)
     rebuildSymlinks(dest, manifest)
     expect(readFileSync(join(dest, 's1.jsonl'))).toEqual(readFileSync(join(d, 's1.jsonl')))
     expect(lstatSync(join(dest, 's1', 'linky')).isSymbolicLink()).toBe(true)
@@ -45,11 +45,11 @@ describe('tarPack', () => {
   it('校验失败时报告不匹配条目', async () => {
     const d = srcTree()
     const out = mkdtempSync(join(tmpdir(), 'tarout2-'))
-    const tgz = join(out, 'content.tar.gz')
+    const zst = join(out, 'content.tar.zst')
     const manifest = await buildManifest(d, ['s1.jsonl', 's1'])
-    await packTree(d, ['s1.jsonl', 's1'], tgz)
+    await packTree(d, ['s1.jsonl', 's1'], zst)
     const dest = join(out, 'unpacked'); mkdirSync(dest)
-    await unpackTarGz(tgz, dest)
+    await unpackZst(zst, dest)
     rebuildSymlinks(dest, manifest)
     writeFileSync(join(dest, 's1.jsonl'), 'tampered')
     const res = await verifyAgainstManifest(dest, manifest)

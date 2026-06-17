@@ -38,9 +38,9 @@ describe('snapshotSession', () => {
     expect(v.sourceCwd).toBe(w.src)
     // 原件仍在
     expect(existsSync(w.jsonl)).toBe(true)
-    // 版本目录含 content.tar.gz + manifest.json
+    // 版本目录含 content.tar.zst + manifest.json
     const vdir = join(w.archiveRoot, 's1', String(res.versionId))
-    expect(existsSync(join(vdir, 'content.tar.gz'))).toBe(true)
+    expect(existsSync(join(vdir, 'content.tar.zst'))).toBe(true)
     expect(existsSync(join(vdir, 'manifest.json'))).toBe(true)
   })
 

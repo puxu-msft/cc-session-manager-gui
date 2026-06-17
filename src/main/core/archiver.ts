@@ -5,7 +5,7 @@ import { LIVE_MTIME_THRESHOLD_MS } from '@shared/constants'
 import { findSessionFile } from './mover'
 import { scanSessionFile } from './jsonlScanner'
 import { buildManifest, packTree, type Manifest } from './tarPack'
-import { unpackTarGz, rebuildSymlinks, verifyAgainstManifest } from './tarPack'
+import { unpackZst, rebuildSymlinks, verifyAgainstManifest } from './tarPack'
 import { encodePath } from './pathCodec'
 import { safeRename } from './fsMove'
 
@@ -64,8 +64,8 @@ async function buildVersion(sessionId: string, kind: 'snapshot' | 'archive', env
     mkdirSync(staging, { recursive: true })
     const roots = rootsFor(found.folder, sessionId)
     const manifest = await buildManifest(found.folder, roots)
-    const tgz = join(staging, 'content.tar.gz')
-    await packTree(found.folder, roots, tgz)
+    const zst = join(staging, 'content.tar.zst')
+    await packTree(found.folder, roots, zst)
     writeFileSync(join(staging, 'manifest.json'), JSON.stringify(manifest))
 
     // 防撕裂:重新 stat 主 jsonl 与 sidecar 子树,size/mtime 或 sidecar 字节变化说明快照期间被写
@@ -75,7 +75,7 @@ async function buildVersion(sessionId: string, kind: 'snapshot' | 'archive', env
       rmSync(staging, { recursive: true, force: true }); env.db.deleteArchiveVersion(versionId)
       return { sessionId, status: 'skipped', error: '快照期间会话被写入,请稍后重试' }
     }
-    const gzBytes = statSync(tgz).size
+    const gzBytes = statSync(zst).size
     env.db.setArchiveVersionGzBytes(versionId, gzBytes)
     renameSync(staging, finalDir)
     env.db.setArchiveVersionStatus(versionId, 'complete')
@@ -91,7 +91,7 @@ export async function snapshotSession(sessionId: string, env: ArchiverEnv): Prom
   return buildVersion(sessionId, 'snapshot', env)
 }
 
-// 删原件前的"真正可还原"闸门(final review 加固):不再只比 content.tar.gz 字节数(那是几行前同一个
+// 删原件前的"真正可还原"闸门(final review 加固):不再只比 content.tar.zst 字节数(那是几行前同一个
 // statSync 自己写入的,等于自己跟自己比,挡不住打包过程中的内容损坏),而是把刚生成的版本包解包到临时校验
 // 目录 → rebuildSymlinks → verifyAgainstManifest,逐条目字节级核对,通过才算"删不可逆原件前确认真正可还原"。
 // 抽成导出小函数以便单测失败分支(造一个 manifest 与 tar 不符的版本目录断言 ok=false)。
@@ -99,14 +99,14 @@ export async function verifyVersionRestorable(
   archiveRoot: string, sessionId: string, versionId: number,
 ): Promise<{ ok: boolean; mismatches: string[] }> {
   const vdir = join(archiveRoot, sessionId, String(versionId))
-  const tgz = join(vdir, 'content.tar.gz')
-  if (!existsSync(tgz)) return { ok: false, mismatches: ['content.tar.gz 缺失'] }
+  const zst = join(vdir, 'content.tar.zst')
+  if (!existsSync(zst)) return { ok: false, mismatches: ['content.tar.zst 缺失'] }
   const verifyDir = join(archiveRoot, sessionId, `.verify-${versionId}`)
   try {
     const manifest = JSON.parse(readFileSync(join(vdir, 'manifest.json'), 'utf8')) as Manifest
     rmSync(verifyDir, { recursive: true, force: true })   // 防上次残留
     mkdirSync(verifyDir, { recursive: true })
-    await unpackTarGz(tgz, verifyDir)
+    await unpackZst(zst, verifyDir)
     rebuildSymlinks(verifyDir, manifest)                  // symlink 不在 tar 里,依 manifest 手动重建
     return await verifyAgainstManifest(verifyDir, manifest)
   } catch (e: any) {
@@ -178,9 +178,9 @@ export async function restoreVersion(versionId: number, env: ArchiverEnv): Promi
   if (block) return { status: 'skipped', error: block }
 
   const vdir = join(env.archiveRoot, sessionId, String(versionId))
-  const tgz = join(vdir, 'content.tar.gz')
+  const zst = join(vdir, 'content.tar.zst')
   const manifest = JSON.parse(readFileSync(join(vdir, 'manifest.json'), 'utf8')) as Manifest
-  if (!existsSync(tgz)) return { status: 'failed', error: '归档包缺失' }
+  if (!existsSync(zst)) return { status: 'failed', error: '归档包缺失' }
 
   const restoreId = env.db.insertRestore({ versionId, sessionId, sourceCwd, targetDirAbs: sourceCwd, targetFolder })
   const backupPath = join(env.backupsRoot, `${restoreId}-${sessionId}`)
@@ -191,7 +191,7 @@ export async function restoreVersion(versionId: number, env: ArchiverEnv): Promi
   try {
     // 1) staging 解包 + 重建 symlink + 校验
     mkdirSync(staging, { recursive: true })
-    await unpackTarGz(tgz, staging)
+    await unpackZst(zst, staging)
     rebuildSymlinks(staging, manifest)   // symlink 不在 tar 里,依 manifest 手动重建
     const vr = await verifyAgainstManifest(staging, manifest)
     if (!vr.ok) { rmSync(staging, { recursive: true, force: true }); env.db.setRestoreStatus(restoreId, 'failed'); return { status: 'failed', restoreId, error: `校验失败: ${vr.mismatches.join(',')}` } }
