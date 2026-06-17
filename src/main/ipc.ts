@@ -10,6 +10,7 @@ import { listDir } from './core/fsBrowser'
 import { trashUsage, purgeMove, purgeAllTrash } from './trash'
 import { previewMove, executeMove, reconcile, undoMove } from './core/mover'
 import { planReconcile, planForce, executeReconcile, undoRewrite } from './core/historyReconciler'
+import { snapshotSession, archiveSession, restoreVersion, undoRestore, deleteVersion, listVersions, archiveUsage, archiverReconcile } from './core/archiver'
 
 // 进行中的扫描 worker:刷新可被新刷新抢占,退出时也会被终止,确保主进程不被长扫描卡住、退出不被阻塞。
 let currentWorker: Worker | null = null
@@ -49,6 +50,7 @@ function runScanWorker(projectsRoot: string, existingRows: unknown[], event: Ipc
 
 export function registerIpc(): void {
   reconcile(getEnv() as any) // 启动时收尾当前活动源的 pending 移动
+  archiverReconcile(getEnv()) // 启动时收尾当前活动源的 pending 归档/还原
 
   ipcMain.handle('sources:list', () => listSources().map((s) => ({ id: s.id, label: s.label, projectsRoot: s.projectsRoot, exists: s.exists })))
   ipcMain.handle('source:get', () => getActiveSourceId())
@@ -57,6 +59,7 @@ export function registerIpc(): void {
     const active = setActiveSourceId(id)
     const env = getEnv()
     reconcile(env as any)
+    archiverReconcile(env) // 切源后收尾新活动源的 pending 归档/还原
     return { active, projects: env.db.getProjects() }
   })
 
@@ -103,5 +106,22 @@ export function registerIpc(): void {
   })
   ipcMain.handle('history:listRewrites', () => getEnv().db.getHistoryRewrites())
   ipcMain.handle('history:undoRewrite', (_e, id: number) => { const env = getEnv() as any; undoRewrite(env, id); return env.db.getHistoryRewrites() })
+
+  ipcMain.handle('archive:snapshot', async (_e, sessionIds: string[]) => {
+    const env = getEnv(); const out = []
+    for (const id of sessionIds) out.push(await snapshotSession(id, env))
+    return out
+  })
+  ipcMain.handle('archive:archive', async (_e, sessionIds: string[]) => {
+    const env = getEnv(); const out = []
+    for (const id of sessionIds) out.push(await archiveSession(id, env))
+    return out
+  })
+  ipcMain.handle('archive:listVersions', (_e, sessionId: string) => listVersions(sessionId, getEnv()))
+  ipcMain.handle('archive:allVersions', () => getEnv().db.getAllArchiveVersions())
+  ipcMain.handle('archive:restore', (_e, versionId: number) => restoreVersion(versionId, getEnv()))
+  ipcMain.handle('archive:undoRestore', (_e, restoreId: number) => { undoRestore(restoreId, getEnv()); return true })
+  ipcMain.handle('archive:deleteVersion', (_e, versionId: number) => { deleteVersion(versionId, getEnv()); return true })
+  ipcMain.handle('archive:usage', () => archiveUsage(getEnv()))
 }
 

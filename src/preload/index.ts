@@ -19,6 +19,14 @@ const api = {
   reconcileHistory: (mode: 'auto' | 'force', sessionIds?: string[], target?: string) => ipcRenderer.invoke('history:reconcile', mode, sessionIds, target),
   listHistoryRewrites: () => ipcRenderer.invoke('history:listRewrites'),
   undoHistoryRewrite: (id: number) => ipcRenderer.invoke('history:undoRewrite', id),
+  archiveSnapshot: (ids: string[]) => ipcRenderer.invoke('archive:snapshot', ids),
+  archiveArchive: (ids: string[]) => ipcRenderer.invoke('archive:archive', ids),
+  archiveListVersions: (sessionId: string) => ipcRenderer.invoke('archive:listVersions', sessionId),
+  archiveAllVersions: () => ipcRenderer.invoke('archive:allVersions'),
+  archiveRestore: (versionId: number) => ipcRenderer.invoke('archive:restore', versionId),
+  archiveUndoRestore: (restoreId: number) => ipcRenderer.invoke('archive:undoRestore', restoreId),
+  archiveDeleteVersion: (versionId: number) => ipcRenderer.invoke('archive:deleteVersion', versionId),
+  archiveUsage: () => ipcRenderer.invoke('archive:usage'),
   // 订阅刷新进度;返回取消订阅函数。
   onRefreshProgress: (cb: (p: RefreshProgress) => void) => {
     const h = (_e: unknown, data: RefreshProgress) => cb(data)

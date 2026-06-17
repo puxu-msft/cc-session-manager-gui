@@ -71,4 +71,22 @@ export interface TrashUsage { total: number; byMove: Record<string, number> }
 // 数据源(本机 / Windows)在渲染层的展示信息
 export interface SourceInfo { id: string; label: string; projectsRoot: string; exists: boolean }
 
+// 归档版本信息(快照/归档),供版本列表与还原 UI 使用
+export interface ArchiveVersionInfo {
+  versionId: number
+  sessionId: string
+  kind: 'snapshot' | 'archive'
+  sourceCwd: string
+  title: string
+  jsonlSizeBytes: number
+  sidecarBytes: number
+  gzTotalBytes: number
+  subagentCount: number
+  lineCount: number
+  archivedAt: string
+}
+export interface ArchiveActionResult { sessionId: string; status: 'done' | 'skipped' | 'failed'; versionId?: number; error?: string }
+export interface RestoreActionResult { status: 'done' | 'skipped' | 'failed'; restoreId?: number; error?: string }
+export interface ArchiveUsage { total: number; backups: number; byVersion: Record<string, number> }
+
 declare global { interface Window { api: import('../preload/index').Api } }
