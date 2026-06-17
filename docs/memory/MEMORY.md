@@ -7,3 +7,4 @@
 - [逻辑与 UI 分离](separate-logic-from-ui.md) — 核心逻辑抽成纯函数以便脱离 UI 单独测试
 - [Electron preload 需 .cjs](electron-preload-cjs-under-type-module.md) — type:module 下 preload 输出 .js 致 window.api 全 undefined;验证要看渲染层 console
 - [better-sqlite3 的 Electron ABI](better-sqlite3-electron-abi-npm-test.md) — npm test 用 Electron runner,native 模块要按 Electron ABI rebuild,NODE_MODULE_VERSION 报错是 ABI 非回归
+- [永远没有"不值当"](always-worth-doing-if-improves.md) — 长远正确/是改善就值得做,别用成本或范围搪塞
