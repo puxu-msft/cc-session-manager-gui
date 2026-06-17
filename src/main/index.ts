@@ -1,35 +1,14 @@
-import { app, BrowserWindow } from 'electron'
-import { join } from 'node:path'
-import { registerIpc, abortCurrentScan } from './ipc'
-import { closeDb, setPaths } from './appState'
-import { electronPaths } from './platform/electron/paths'
+import { bootstrap } from './app/bootstrap'
+import { ElectronAppHost } from './platform/electron/app'
+import { ElectronWindowHost } from './platform/electron/window'
 import { ElectronBridge } from './platform/electron/bridge'
+import { electronPaths } from './platform/electron/paths'
 
-// 显式设定应用名,确保 userData 落在 ~/.config/cc-move-session(而非 dev/未打包启动时回退的 "Electron")。
-// 必须在首次访问 app.getPath('userData') 之前调用。
-app.setName('cc-move-session')
-
-function createWindow() {
-  const win = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.cjs'),
-      contextIsolation: true,
-      sandbox: false,
-    },
-  })
-  if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)
-  else win.loadFile(join(__dirname, '../renderer/index.html'))
-}
-
-// 注入 Electron 的 Paths 实现后再注册 IPC(reconcile 会经 getEnv→userDataDir 用到它)。
-app.whenReady().then(() => { setPaths(electronPaths); registerIpc(new ElectronBridge()); createWindow() })
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
-// 退出前优雅关停:中断进行中的扫描(否则长扫描会拖住退出)并关闭 DB 连接。
-app.on('before-quit', () => {
-  abortCurrentScan()
-  closeDb()
+// Electron 入口:装配 Electron 平台实现并启动。
+// (Electrobun 入口将以同样方式装配其各自实现,共享 bootstrap 与全部核心逻辑。)
+bootstrap({
+  appHost: new ElectronAppHost(),
+  windowHost: new ElectronWindowHost(),
+  bridge: new ElectronBridge(),
+  paths: electronPaths,
 })

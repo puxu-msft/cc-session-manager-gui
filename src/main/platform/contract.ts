@@ -28,3 +28,25 @@ export interface BridgeContext {
 export interface BridgeServer {
   handle(channel: string, handler: (ctx: BridgeContext, ...args: any[]) => unknown): void
 }
+
+// 应用生命周期宿主。Electron=app;Electrobun 提供等价实现。darwin 关窗语义由调用方(bootstrap)判定。
+export interface AppHost {
+  setName(name: string): void
+  whenReady(): Promise<void>
+  onWindowAllClosed(cb: () => void): void
+  onBeforeQuit(cb: () => void): void
+  quit(): void
+}
+
+// 主窗口宿主。Electron=BrowserWindow + preload;Electrobun=BrowserWindow/BrowserView + views://。
+export interface WindowHost {
+  createMainWindow(): void
+}
+
+// 一套运行时平台实现的集合,交给 bootstrap 装配。
+export interface Platform {
+  appHost: AppHost
+  windowHost: WindowHost
+  bridge: BridgeServer
+  paths: Paths
+}
