@@ -1,0 +1,19 @@
+{
+  "name": "electrobun-app",
+  "module": "src/bun/index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "electrobun": "^1.18.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  }
+}
