@@ -16,4 +16,5 @@
 ## 本项目留档约定
 
 - 设计/实现走三段式留档:`docs/superpowers/specs/`(设计规格,真相源)、`docs/superpowers/plans/`(实现计划)、`docs/superpowers/spike-results/`(探针/裁定结果)。重要改动经多方对抗审查 + 收敛裁决迭代(通用审查流程依用户全局规则,不在此重述)。完整文档目录见 README「## 文档」。
+- **活文档 vs 冻结文档**:`docs/ARCHITECTURE.md`(当前架构)与 `docs/ROADMAP.md`(进度/路线图)是**活文档**,描述「现在是什么」——**改了架构或推进了阶段,必须同步更新它们**(否则会烂成过期的错误参考)。`docs/superpowers/{specs,plans,spike-results}` 是**冻结文档**,定格于撰写时记录「当时打算怎么做/裁定了什么」,不回头改;活文档描述现状并**链接**冻结 spec 讲缘由,不复制其内容。
 - 调试踩坑与可迁移技术结论:跨项目通用的记在 `docs/memory/`(该目录是项目记忆的符号链接,受版本控制),索引见 [docs/memory/MEMORY.md](docs/memory/MEMORY.md);本项目专属的实现细节写进 README / docs,不进记忆。

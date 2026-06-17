@@ -55,9 +55,14 @@ WSL 注意:若从 Windows 经 `WSLENV` 泄漏了 `ELECTRON_RUN_AS_NODE=1`,会让
 
 ## 文档
 
-本节是全项目文档目录(各文档自身是对应主题的真相源)。
+本节是全项目文档目录。**活文档**随代码更新(当前状态的真相源);**冻结文档**(spec/plan/spike-results)定格于撰写时,记录设计意图与裁定,不随代码更新。
 
-**核心(移动 / 历史对账 / 归档还原)**
+**活文档(当前状态)**
+- 架构总览:[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 当前模块/数据流/数据模型/双运行时缝
+- 路线图与进度:[docs/ROADMAP.md](docs/ROADMAP.md) — 已完成 / 进行中 / 下一步(「我们在哪」的单一来源)
+- Electrobun 开发辅助 / 调试笔记:[docs/electrobun-dev-guide.md](docs/electrobun-dev-guide.md) — 真实 API 差异 / WSL 起窗判据 / appindicator 前置 / 验证方法论
+
+**冻结:核心(移动 / 历史对账 / 归档还原)**
 - 设计规格:[docs/superpowers/specs/2026-06-15-cc-move-session-design.md](docs/superpowers/specs/2026-06-15-cc-move-session-design.md)
 - 实现计划:[docs/superpowers/plans/2026-06-15-cc-move-session.md](docs/superpowers/plans/2026-06-15-cc-move-session.md)
 - 历史 JSONL 对账设计:[docs/superpowers/specs/2026-06-16-history-jsonl-reconciler-design.md](docs/superpowers/specs/2026-06-16-history-jsonl-reconciler-design.md)
@@ -66,11 +71,10 @@ WSL 注意:若从 Windows 经 `WSLENV` 泄漏了 `ELECTRON_RUN_AS_NODE=1`,会让
 - 归档/还原设计:[docs/superpowers/specs/2026-06-17-session-archive-restore-design.md](docs/superpowers/specs/2026-06-17-session-archive-restore-design.md)
 - 归档/还原实现计划:[docs/superpowers/plans/2026-06-17-session-archive-restore.md](docs/superpowers/plans/2026-06-17-session-archive-restore.md)
 
-**双运行时改造(进行中:Phase 0 已裁定 go,下一步写 Phase 1–3 实现计划)**
+**冻结:双运行时改造**(当前进度见上方 ROADMAP)
 - 设计规格(Electrobun 一等 / Electron 兼容):[docs/superpowers/specs/2026-06-17-dual-runtime-electrobun-electron-design.md](docs/superpowers/specs/2026-06-17-dual-runtime-electrobun-electron-design.md)
 - Phase 0 Spike 计划:[docs/superpowers/plans/2026-06-17-electrobun-phase0-spike.md](docs/superpowers/plans/2026-06-17-electrobun-phase0-spike.md)
 - Phase 0 结果与裁定(8/8 PASS,go):[docs/superpowers/spike-results/2026-06-17-phase0.md](docs/superpowers/spike-results/2026-06-17-phase0.md)
-- Electrobun 开发辅助 / 调试笔记(真实 API 差异 / WSL 起窗判据 / appindicator 前置 / 验证方法论):[docs/electrobun-dev-guide.md](docs/electrobun-dev-guide.md)
 
 **相关工具(规划中)**
 - 快照工具方案(独立 restic + zstd CLI,可被本项目复用):[docs/snapshot-plan.md](docs/snapshot-plan.md)
