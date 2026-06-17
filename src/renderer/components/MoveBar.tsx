@@ -10,11 +10,12 @@ interface MoveBarProps {
   onHistory?: () => void
   onReconcile?: () => void
   reconcilePending?: number
+  onOpenArchive?: () => void
   onSnapshot?: () => void
   onArchive?: () => void
 }
 
-export function MoveBar({ count, target, refreshing, progress, onMove, onRefresh, onHistory, onReconcile, reconcilePending, onSnapshot, onArchive }: MoveBarProps) {
+export function MoveBar({ count, target, refreshing, progress, onMove, onRefresh, onHistory, onReconcile, reconcilePending, onOpenArchive, onSnapshot, onArchive }: MoveBarProps) {
   const pct = progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0
   return (
     <div className="movebar">
@@ -28,6 +29,7 @@ export function MoveBar({ count, target, refreshing, progress, onMove, onRefresh
           对账{reconcilePending ? <span className="badge">{reconcilePending}</span> : null}
         </button>
       )}
+      {onOpenArchive && <button onClick={onOpenArchive} disabled={refreshing}>归档时间线</button>}
       <div className="spacer" />
       {onSnapshot && (
         <button disabled={count === 0 || refreshing} onClick={onSnapshot}>

@@ -8,6 +8,7 @@ import { MoveBar } from './components/MoveBar'
 import { ConfirmModal } from './components/ConfirmModal'
 import { HistoryView } from './components/HistoryView'
 import { HistoryReconcileView } from './components/HistoryReconcileView'
+import { ArchiveTimelineView } from './components/ArchiveTimelineView'
 import './styles.css'
 
 // 把归档/快照批量结果汇总成一句非阻塞提示(对齐 HistoryReconcileView 的 msg 文本反馈)
@@ -26,6 +27,7 @@ export function App() {
   const st = useAppState()
   const [showHistory, setShowHistory] = useState(false)
   const [showReconcile, setShowReconcile] = useState(false)
+  const [showArchive, setShowArchive] = useState(false)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
   useEffect(() => { st.loadSources(); st.loadIndex(); st.browse(''); st.loadReconcilePending() }, [])
 
@@ -95,11 +97,12 @@ export function App() {
         <SessionPane sessions={st.sessions} selected={st.selectedSessions} onToggle={toggle} onToggleAll={toggleAll} />
         <FsBrowserPane listing={st.fsListing} target={st.targetDir} onBrowse={st.browse} onPickTarget={st.setTargetDir} onMakeDir={st.makeDir} />
       </div>
-      <MoveBar count={st.selectedSessions.size} target={st.targetDir} refreshing={st.refreshing} progress={st.progress} onMove={startMove} onRefresh={st.refresh} onHistory={() => setShowHistory(true)} onReconcile={() => setShowReconcile(true)} reconcilePending={st.reconcilePending} onSnapshot={onSnapshot} onArchive={onArchive} />
+      <MoveBar count={st.selectedSessions.size} target={st.targetDir} refreshing={st.refreshing} progress={st.progress} onMove={startMove} onRefresh={st.refresh} onHistory={() => setShowHistory(true)} onReconcile={() => setShowReconcile(true)} reconcilePending={st.reconcilePending} onSnapshot={onSnapshot} onArchive={onArchive} onOpenArchive={() => setShowArchive(true)} />
       {actionMsg && <p className="notice" onClick={() => setActionMsg(null)}>{actionMsg}</p>}
       {st.preview && <ConfirmModal preview={st.preview} onCancel={() => st.setPreview(null)} onConfirm={confirmMove} />}
       {showHistory && <HistoryView onClose={() => setShowHistory(false)} />}
       {showReconcile && <HistoryReconcileView onClose={() => setShowReconcile(false)} onChanged={st.loadReconcilePending} />}
+      {showArchive && <ArchiveTimelineView onClose={() => setShowArchive(false)} />}
     </div>
   )
 }
