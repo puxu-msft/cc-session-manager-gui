@@ -87,4 +87,13 @@ describe('verifyVersionRestorable', () => {
     const res = await verifyVersionRestorable(c.archiveRoot, c.sessionId, c.versionId)
     expect(res.ok).toBe(false)
   })
+
+  it('manifest.json 损坏(非法 JSON)→ ok=false 且不抛异常', async () => {
+    const c = makeVersionDir(false)
+    const roots = [`${c.sessionId}.jsonl`, c.sessionId]
+    await packTree(c.src, roots, join(c.vdir, 'content.tar.gz'))
+    writeFileSync(join(c.vdir, 'manifest.json'), '{ not valid json')
+    const res = await verifyVersionRestorable(c.archiveRoot, c.sessionId, c.versionId)
+    expect(res.ok).toBe(false)
+  })
 })

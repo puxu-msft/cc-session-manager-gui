@@ -101,14 +101,17 @@ export async function verifyVersionRestorable(
   const vdir = join(archiveRoot, sessionId, String(versionId))
   const tgz = join(vdir, 'content.tar.gz')
   if (!existsSync(tgz)) return { ok: false, mismatches: ['content.tar.gz 缺失'] }
-  const manifest = JSON.parse(readFileSync(join(vdir, 'manifest.json'), 'utf8')) as Manifest
   const verifyDir = join(archiveRoot, sessionId, `.verify-${versionId}`)
   try {
+    const manifest = JSON.parse(readFileSync(join(vdir, 'manifest.json'), 'utf8')) as Manifest
     rmSync(verifyDir, { recursive: true, force: true })   // 防上次残留
     mkdirSync(verifyDir, { recursive: true })
     await unpackTarGz(tgz, verifyDir)
     rebuildSymlinks(verifyDir, manifest)                  // symlink 不在 tar 里,依 manifest 手动重建
     return await verifyAgainstManifest(verifyDir, manifest)
+  } catch (e: any) {
+    // manifest.json 缺失/损坏、解包异常等都判为不可还原(删不可逆原件前从严:任何异常都保留原件)
+    return { ok: false, mismatches: [`版本包校验异常: ${String(e?.message ?? e)}`] }
   } finally {
     try { rmSync(verifyDir, { recursive: true, force: true }) } catch {}
   }
