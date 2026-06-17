@@ -100,7 +100,7 @@ src/
 - `Paths`:`userData(): string`。**硬约束:两套实现必须返回同一物理目录**(Linux `~/.config/<name>`、macOS `~/Library/Application Support/<name>`、Windows `%APPDATA%/<name>`),Electrobun 侧自拼并字节级对齐 Electron `app.getPath('userData')`;Phase 0/2 加路径相等断言。
 - `SqliteDriver`:`prepare(sql)` 返回的 statement 须同时支持**命名参数(`@name`)与位置参数(`?` 数组)两种调用风格**(repository 现状混用);`exec(sql)`、`transaction(fn)`(须支持 better-sqlite3 式 `transaction(fn)()` 双重调用 + 闭包内同步读 `lastInsertRowid`)、`pragma(s)`(bun:sqlite 内部翻译为 `run("PRAGMA …")`)、`close()`。boolean→0/1 转换**只在 repository 层发生,driver 透传**(避免双重转换)。
 - `ScanRunner`:`run(input, onProgress): Promise<ScanOutcome>`、`terminate()`;保留"未收到 done/error 即被中断 = aborted"语义。
-- `Compressor`:`compressStream()` / `decompressStream()`(对齐现 `tarPack.ts` 的 zstd 流式用法);两套实现:Electron=zstd-napi,Electrobun=Bun 原生或 WASM(Phase 0 定夺)。
+- `Compressor`:`compressStream()` / `decompressStream()`(对齐现 `tarPack.ts` 的 zstd 流式用法);两套实现:Electron=zstd-napi,Electrobun=Bun 原生或 WASM(Phase 0 定夺)。**硬约束:跨运行时归档必须同格式可互读**——因两运行时共享同一 userData 目录,一台机器上"Electron 归档→Electrobun 还原"(或反之)必须成功。故 fallback 须锁定 zstd(WASM/原生),**不得退化为 `Bun.gzip` 等异格式**,否则归档分裂等同于 Paths 的数据分裂问题。
 - `WindowHost`:`createMainWindow(opts)` 仅负责窗口生命周期与 renderer 加载;**bridge/注入接线不塞进此接口**,收敛到 `BridgeServer` + bootstrap,避免职责对半泄漏。
 - `AppHost`:`whenReady()`、`onAllWindowsClosed(cb)`(darwin 分支归属在此接口内明确)、`onBeforeQuit(cb)`、`setName(name)`、`quit()`。
 - `BridgeServer`:`handle(channel, fn)`、`emit(event, payload)`;为每次 invoke 注入与本次调用绑定的 `emitProgress`。
@@ -124,12 +124,13 @@ src/
 4. `lastInsertRowid` 经 `.run()` 返回(两库同名,`Number(...)` 收口)。
 5. macOS 用系统 SQLite,WAL `-wal/-shm` sidecar 不自动清;若要跨平台一致,close 前 `PRAGMA wal_checkpoint(TRUNCATE)` + 关闭 persist-wal。
 6. `safeIntegers` 默认 false(大整数截断风险,评估 rowid/时间戳)。
+7. **PRAGMA-as-query 与多语句 exec**:`db.ts` 的 schema 迁移路径(每次启动必经)依赖 `prepare('PRAGMA table_info(...)').all()`(把 PRAGMA 当结果集查询读取)与 `exec(SCHEMA_SQL)`(多语句建表)、`exec('ALTER TABLE …')`。driver 契约须明确:`prepare(PRAGMA).all()` 返回行、`exec` 支持多语句;bun:sqlite 对二者的处理与 better-sqlite3 不同,须 Phase 0.2 实测并在 driver 内吸收。
 - `appState.ts` 多源 DB 管理(`index-<id>.db`、`migrateLegacyLocalDb`)保留,仅把 `openDb` 换成"repository + 注入 driver"。
 - **Phase 1 前置**:先消除 `ipc.ts` 中反复出现的 `getEnv() as any`,否则 `Db` 变接口后类型回归不可信。
 
 ## 10. 测试策略
 
-- **repository 单测参数化跑两个 driver**(同一套用例,driver 作为 fixture):这是双 driver 的核心回归保险,verify §9 的差异吸收。
+- **repository 单测参数化跑两个 driver**(同一套用例,driver 作为 fixture):这是双 driver 的核心回归保险,verify §9 的差异吸收。该参数化 fixture 在 Phase 1 抽 repository 时即建立(先填 better-sqlite3 driver 保 Electron green),Phase 2 补入 bun:sqlite driver。
 - **vitest → bun:test 决策**:现 24 个 `*.test.ts` 均 `from 'vitest'`,bun test 用 `bun:test`,import 源不同、`vi.*` 与 bun `mock/spyOn` 不一致。本期决策:**核心层/repository 测试统一迁到 `bun:test`**(放弃 vitest 复用),Electron 侧若需断言走兼容路径;不假设"无缝复用"。该迁移工作量(24 文件 import + 可能的 mock 改写)记入 Phase 1。
 - **Electron 兼容路径**:保留现有 `scripts/test-electron.mjs`(better-sqlite3,Electron ABI)作为兼容回归;迁移 db import 结构时警惕扰动该脆弱 ABI 平衡(`NODE_MODULE_VERSION` 踩坑)。
 - **e2e**:本期 Playwright e2e 继续跑 Electron 路径;Electrobun 路径先手动冒烟。
@@ -149,7 +150,7 @@ src/
   2. `bun:sqlite`:WAL pragma、命名参数、`transaction(fn)()` 闭包内 `lastInsertRowid`、prepare/run/get/all。
   3. `node:worker_threads` 在 Bun 全链路(workerData/parentPort.postMessage/terminate);失败才退原生 Bun Worker。
   4. **`zstd-napi` 在 Bun 下 require + 压缩/解压往返**;失败则定 `Compressor` 替代方案(Bun.gzip/zstd WASM)。
-  5. `node:fs` 同步语义对等(`renameSync` 跨设备、`lstatSync` symlink、原子 rename)。
+  5. `node:fs` 同步语义对等:**探针对象为项目封装 `safeRename`(`core/fsMove.ts`)而非裸 `renameSync`**(封装含跨设备 EXDEV fallback 等逻辑),并测 `lstatSync` symlink、原子 rename。
   6. `Paths.userData()` 两运行时解析路径相等。
   7. Electrobun RPC 最小证据:invoke/handle(request)+ 单向 push(send)+ 结构化 payload。
   8. `Bun.build` 打包最小 React 页可在 Electrobun 渲染。
@@ -189,7 +190,7 @@ src/
 
 - **Phase 0 通过** = §12 八个探针项全绿(任一阻断项失败即止损或转 fallback 评估)。
 - **Phase 2 通过** = 五条核心流程在 Electrobun 下手动冒烟通过 + repository 测试在 bun:sqlite driver 下 100% 通过 + 两运行时 userData 路径实测相等。
-- **Phase 3 切默认前置** = 包体实测达 §1 预期数量级、冷启动实测达预期数量级、**Electron 回归 0 失败**、防漂移 import 边界检查 0 违规。
+- **Phase 3 切默认前置**(可判定阈值)= 打包体积 < Electron 基线的 1/3、冷启动 < 现 Electron 基线、**Electron 回归 0 失败**、防漂移 import 边界检查 0 违规。(基线 = 切换前实测的 Electron 产物体积与冷启动时间。)
 
 ## 16. 回滚 / 止损条款
 
