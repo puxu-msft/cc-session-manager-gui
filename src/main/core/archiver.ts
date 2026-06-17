@@ -241,3 +241,29 @@ export function archiveUsage(env: ArchiverEnv): { total: number; backups: number
   if (existsSync(env.backupsRoot)) backups = sizeOf(env.backupsRoot)
   return { total, backups, byVersion }
 }
+
+// 崩溃恢复:启动 / 切源时与 mover.reconcile 并列调用。
+// - pending 版本:删除其 .staging-* 与行(原件从未被动,删除原件只在 complete 后)。
+// - pending restore 按 phase:无/staging_done → 删 staging 置 failed;backup_done → 把备份搬回原位置 failed;commit_done → 补记 done。
+export function archiverReconcile(env: ArchiverEnv): void {
+  for (const v of env.db.getPendingArchiveVersions()) {
+    const staging = join(env.archiveRoot, v.sessionId, `.staging-${v.versionId}`)
+    try { rmSync(staging, { recursive: true, force: true }) } catch {}
+    env.db.deleteArchiveVersion(v.versionId)
+  }
+  for (const r of env.db.getPendingRestores()) {
+    const staging = join(env.archiveRoot, r.sessionId, `.restore-staging-${r.id}`)
+    if (r.phase === 'commit_done') { env.db.setRestoreStatus(r.id, 'done'); continue }
+    if (r.phase === 'backup_done') {
+      // 清除半搬入的版本残留(单点 clearSessionEntries,与换入条目集合对应),再把备份现状搬回目标(前滚到"还原前")
+      const targetFolder = r.targetFolder as string, sessionId = r.sessionId as string
+      clearSessionEntries(targetFolder, sessionId)
+      const bMain = join(r.backupPath, `${sessionId}.jsonl`), bSidecar = join(r.backupPath, sessionId)
+      if (existsSync(bMain)) safeRename(bMain, join(targetFolder, `${sessionId}.jsonl`))
+      if (existsSync(bSidecar)) safeRename(bSidecar, join(targetFolder, sessionId))
+      try { rmSync(r.backupPath, { recursive: true, force: true }) } catch {}   // 备份已搬回,清掉空壳
+    }
+    try { rmSync(staging, { recursive: true, force: true }) } catch {}
+    env.db.setRestoreStatus(r.id, 'failed')
+  }
+}
