@@ -1,10 +1,12 @@
 # 记忆索引
 
-- [中文且不硬换行](chinese-no-hard-wrap-docs.md) — 所有文档/记忆/注释用中文、不做行宽硬换行
-- [始终用中文回复](reply-in-chinese.md) — 即使用户说英文也用中文,不用日语
-- [问题不是指令](question-not-instruction.md) — 用户问"X 是什么"是提问,别擅自去做 X 或扩大范围
-- [WSL Electron 不弹窗坑](wsl-electron-run-as-node-leak.md) — ELECTRON_RUN_AS_NODE 经 WSLENV 泄漏致 GUI 不启动,清空(非设0)即可
-- [逻辑与 UI 分离](separate-logic-from-ui.md) — 核心逻辑抽成纯函数以便脱离 UI 单独测试
-- [Electron preload 需 .cjs](electron-preload-cjs-under-type-module.md) — type:module 下 preload 输出 .js 致 window.api 全 undefined;验证要看渲染层 console
-- [better-sqlite3 的 Electron ABI](better-sqlite3-electron-abi-npm-test.md) — npm test 用 Electron runner,native 模块要按 Electron ABI rebuild,NODE_MODULE_VERSION 报错是 ABI 非回归
-- [永远没有"不值当"](always-worth-doing-if-improves.md) — 长远正确/是改善就值得做,别用成本或范围搪塞
+本目录(`docs/memory/`,项目记忆的符号链接,受版本控制)**只存跨项目可迁移的技术踩坑**。其余内容各有其主属地,本文件仅留单行指针、不复述:
+
+- **协作原则 / 工程纪律**(用中文回复、问题≠指令、永远没有不值当、逻辑与 UI 分离、验证看真实信号)→ 见项目根 [CLAUDE.md](../../CLAUDE.md)(始终在上下文)。
+- **项目说明 / 用法 / 完整文档目录 / 双运行时改造进度**(Bun+Electrobun 默认 / Electron 兼容,Phase 0 已裁定 go)→ 见 [README.md](../../README.md) 「## 文档」。
+
+## 可迁移技术记忆
+
+- [WSL Electron 不弹窗坑](wsl-electron-run-as-node-leak.md) — `ELECTRON_RUN_AS_NODE` 经 WSLENV 从 Windows 泄漏致 GUI 不启动,须清空(设 `0` 无效)
+- [原生模块 ABI 必须匹配测试运行时](native-module-abi-test-runtime.md) — `NODE_MODULE_VERSION` 不匹配是 ABI 问题非代码回归,按测试运行时 rebuild,别在两套 ABI 间横跳
+- [Electron preload 需 .cjs](electron-preload-cjs-under-type-module.md) — type:module 下 preload 输出 .js 致 window.api 全 undefined;含 headless 桥接验证探针

@@ -1,6 +1,6 @@
 ---
 name: electron-preload-cjs-under-type-module
-description: "type:module 项目里 Electron preload 必须输出 .cjs,否则 window.api 全程 undefined"
+description: "type:module 项目里 Electron preload 必须输出 .cjs,否则 window.api 全程 undefined;含 headless 桥接验证探针"
 metadata: 
   node_type: memory
   type: reference
@@ -11,4 +11,4 @@ metadata:
 
 **修复:** preload 输出为 `.cjs`(electron-vite:`build.rollupOptions.output = { format: 'cjs', entryFileNames: '[name].cjs' }`),并让 main 的 `webPreferences.preload` 指向 `index.cjs`。
 
-**验证纪律(关键教训):** 验证 Electron 应用不能只看主进程是否启动——**必须看渲染层 console**。headless 下可在 main 里临时 `win.webContents.on('console-message', …)` 转发渲染层日志,或 `win.webContents.executeJavaScript('Object.keys(window.api||{})')` 探针确认桥接完整。只确认"app 启动了"会漏掉渲染层↔主进程桥断裂这类 bug。参见 [[separate-logic-from-ui]]、[[wsl-electron-run-as-node-leak]]。
+**headless 下确认桥接完整的具体探针手法**(承「验证要看真实信号」原则,见 CLAUDE.md「工程纪律」):在 main 里临时 `win.webContents.on('console-message', …)` 把渲染层日志转发到主进程终端,或 `win.webContents.executeJavaScript('Object.keys(window.api||{})')` 直接探测桥接对象是否完整。只确认「app 启动了」会漏掉渲染层↔主进程桥断裂这类 bug。相邻坑见 [[wsl-electron-run-as-node-leak]]。

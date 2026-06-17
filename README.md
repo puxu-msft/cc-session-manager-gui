@@ -36,6 +36,8 @@ npm run rebuild          # 手动把原生模块重建为 Electron ABI
 
 新克隆首次 `npm install` 时,`postinstall`(`electron-builder install-app-deps`)会为 Electron 重建 `better-sqlite3`;该模块没有现成的 Electron 预编译件,需本地编译(约 1~2 分钟,依赖 python3 / make / g++)。
 
+判断 ABI 问题(非代码回归):若触达 DB 的测试**整片**报 `NODE_MODULE_VERSION <X> vs 146` 或 `Module did not self-register`,是 ABI 不匹配而非代码坏了——**重建即可,别改代码**:`npm run rebuild`,或点名重建 `npx @electron/rebuild -f -w better-sqlite3 -v <electron 版本>`。切勿用系统 node 的 `npm rebuild better-sqlite3`(会编成系统 ABI,让跑在 Electron 运行时的测试整片失败,并与 Electron ABI 来回横跳)。跨项目通用判据见 `docs/memory/native-module-abi-test-runtime.md`。
+
 WSL 注意:若从 Windows 经 `WSLENV` 泄漏了 `ELECTRON_RUN_AS_NODE=1`,会让 `npm run dev` 启动的 electron 以 node 模式运行而不弹窗;`dev` 脚本已在启动前清空该变量(注意须清空或 unset,设为 `0` 无效)。
 
 
@@ -53,7 +55,23 @@ WSL 注意:若从 Windows 经 `WSLENV` 泄漏了 `ELECTRON_RUN_AS_NODE=1`,会让
 
 ## 文档
 
+本节是全项目文档目录(各文档自身是对应主题的真相源)。
+
+**核心(移动 / 历史对账 / 归档还原)**
 - 设计规格:[docs/superpowers/specs/2026-06-15-cc-move-session-design.md](docs/superpowers/specs/2026-06-15-cc-move-session-design.md)
 - 实现计划:[docs/superpowers/plans/2026-06-15-cc-move-session.md](docs/superpowers/plans/2026-06-15-cc-move-session.md)
+- 历史 JSONL 对账设计:[docs/superpowers/specs/2026-06-16-history-jsonl-reconciler-design.md](docs/superpowers/specs/2026-06-16-history-jsonl-reconciler-design.md)
+- 历史 JSONL 对账实现计划:[docs/superpowers/plans/2026-06-16-history-jsonl-reconciler.md](docs/superpowers/plans/2026-06-16-history-jsonl-reconciler.md)
+- 历史视图 UI 实现计划:[docs/superpowers/plans/2026-06-16-history-reconciler-ui.md](docs/superpowers/plans/2026-06-16-history-reconciler-ui.md)
 - 归档/还原设计:[docs/superpowers/specs/2026-06-17-session-archive-restore-design.md](docs/superpowers/specs/2026-06-17-session-archive-restore-design.md)
 - 归档/还原实现计划:[docs/superpowers/plans/2026-06-17-session-archive-restore.md](docs/superpowers/plans/2026-06-17-session-archive-restore.md)
+
+**双运行时改造(进行中:Phase 0 已裁定 go,下一步写 Phase 1–3 实现计划)**
+- 设计规格(Electrobun 一等 / Electron 兼容):[docs/superpowers/specs/2026-06-17-dual-runtime-electrobun-electron-design.md](docs/superpowers/specs/2026-06-17-dual-runtime-electrobun-electron-design.md)
+- Phase 0 Spike 计划:[docs/superpowers/plans/2026-06-17-electrobun-phase0-spike.md](docs/superpowers/plans/2026-06-17-electrobun-phase0-spike.md)
+- Phase 0 结果与裁定(8/8 PASS,go):[docs/superpowers/spike-results/2026-06-17-phase0.md](docs/superpowers/spike-results/2026-06-17-phase0.md)
+- Electrobun 开发辅助 / 调试笔记(真实 API 差异 / WSL 起窗判据 / appindicator 前置 / 验证方法论):[docs/electrobun-dev-guide.md](docs/electrobun-dev-guide.md)
+
+**相关工具(规划中)**
+- 快照工具方案(独立 restic + zstd CLI,可被本项目复用):[docs/snapshot-plan.md](docs/snapshot-plan.md)
+
