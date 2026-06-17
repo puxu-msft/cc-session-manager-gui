@@ -1,0 +1,14 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>cc-move-session</title>
+    <!-- Electrobun 的 Bun.build 以入口 basename 命名产物(main.electrobun.tsx → main.electrobun.js/.css),
+         CSS 不内联进 JS 而单独产出,需在此显式 link。 -->
+    <link rel="stylesheet" href="main.electrobun.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="main.electrobun.js"></script>
+  </body>
+</html>

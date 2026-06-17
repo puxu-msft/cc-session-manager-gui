@@ -51,6 +51,9 @@ export interface Platform {
   bridge: BridgeServer
   paths: Paths
   dbFactory: (file: string) => Db
+  // 后台扫描运行器。可选:Electron 不传,ipc 层回退默认的 worker_threads 实现(行为不变);
+  // Electrobun 传入进程内异步实现(其打包不便定位独立 worker 入口)。
+  scanRunner?: ScanRunner
 }
 
 // 预编译语句的最小抽象:run/get/all 同时支持命名参数对象(run({a:1}))与位置参数(run(1,2))两种调用风格。

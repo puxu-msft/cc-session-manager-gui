@@ -14,6 +14,6 @@
     "paths": { "@shared/*": ["./src/shared/*"] }
   },
   "include": ["src"],
-  "comment_exclude": "platform/electrobun 用 bun:sqlite/electrobun 等 Bun 专有模块,由 Bun 自身编译/检查,不纳入 node tsc 与 electron-vite。",
-  "exclude": ["src/main/platform/electrobun"]
+  "comment_exclude": "platform/electrobun 与 src/bun(electrobun 入口)用 bun:sqlite/electrobun 等 Bun 专有模块,由 Bun 自身编译/检查,不纳入 node tsc 与 electron-vite。",
+  "exclude": ["src/main/platform/electrobun", "src/bun"]
 }

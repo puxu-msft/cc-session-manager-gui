@@ -12,7 +12,7 @@ export function bootstrap(platform: Platform): void {
   void platform.appHost.whenReady().then(() => {
     setPaths(platform.paths)
     setDbFactory(platform.dbFactory)
-    registerIpc(platform.bridge)
+    registerIpc(platform.bridge, platform.scanRunner)
     platform.windowHost.createMainWindow()
   })
   platform.appHost.onWindowAllClosed(() => {

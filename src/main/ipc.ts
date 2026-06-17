@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import type { ProjectMeta } from '@shared/types'
-import type { BridgeServer } from './platform/contract'
+import type { BridgeServer, ScanRunner } from './platform/contract'
 import { ElectronScanRunner } from './platform/electron/scanRunner'
 import { getEnv, listSources, getActiveSourceId, setActiveSourceId } from './appState'
 import { applyScanToIndex } from './refresh'
@@ -12,13 +12,15 @@ import { previewMove, executeMove, reconcile, undoMove } from './core/mover'
 import { planReconcile, planForce, executeReconcile, undoRewrite } from './core/historyReconciler'
 import { snapshotSession, archiveSession, restoreVersion, undoRestore, deleteVersion, listVersions, archiveUsage, archiverReconcile } from './core/archiver'
 
-// 后台扫描运行器(Electron=worker_threads)。刷新可被新刷新抢占,退出/切源时被 terminate 中断。
-const scanRunner = new ElectronScanRunner()
+// 后台扫描运行器。默认 Electron worker_threads 实现;运行时可经 registerIpc(bridge, runner) 注入
+// 其它实现(Electrobun 用进程内异步实现)。刷新可被新刷新抢占,退出/切源时被 terminate 中断。
+let scanRunner: ScanRunner = new ElectronScanRunner()
 export function abortCurrentScan(): void {
   scanRunner.terminate()
 }
 
-export function registerIpc(bridge: BridgeServer): void {
+export function registerIpc(bridge: BridgeServer, runner?: ScanRunner): void {
+  if (runner) scanRunner = runner
   reconcile(getEnv()) // 启动时收尾当前活动源的 pending 移动
   archiverReconcile(getEnv()) // 启动时收尾当前活动源的 pending 归档/还原
 
