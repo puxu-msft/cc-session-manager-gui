@@ -100,7 +100,7 @@ src/
 - `Paths`:`userData(): string`。**硬约束:两套实现必须返回同一物理目录**(Linux `~/.config/<name>`、macOS `~/Library/Application Support/<name>`、Windows `%APPDATA%/<name>`),Electrobun 侧自拼并字节级对齐 Electron `app.getPath('userData')`;Phase 0/2 加路径相等断言。
 - `SqliteDriver`:`prepare(sql)` 返回的 statement 须同时支持**命名参数(`@name`)与位置参数(`?` 数组)两种调用风格**(repository 现状混用);`exec(sql)`、`transaction(fn)`(须支持 better-sqlite3 式 `transaction(fn)()` 双重调用 + 闭包内同步读 `lastInsertRowid`)、`pragma(s)`(bun:sqlite 内部翻译为 `run("PRAGMA …")`)、`close()`。boolean→0/1 转换**只在 repository 层发生,driver 透传**(避免双重转换)。
 - `ScanRunner`:`run(input, onProgress): Promise<ScanOutcome>`、`terminate()`;保留"未收到 done/error 即被中断 = aborted"语义。
-- `Compressor`:`compressStream()` / `decompressStream()`(对齐现 `tarPack.ts` 的 zstd 流式用法);两套实现:Electron=zstd-napi,Electrobun=Bun 原生或 WASM(Phase 0 定夺)。**硬约束:跨运行时归档必须同格式可互读**——因两运行时共享同一 userData 目录,一台机器上"Electron 归档→Electrobun 还原"(或反之)必须成功。故 fallback 须锁定 zstd(WASM/原生),**不得退化为 `Bun.gzip` 等异格式**,否则归档分裂等同于 Paths 的数据分裂问题。
+- `Compressor`:`compressStream()` / `decompressStream()`(对齐现 `tarPack.ts` 的 zstd 流式用法);**两套实现均用 zstd-napi**(Phase 0 实测 zstd-napi 在 Bun 正常加载,含 level19/LDM/nbWorkers2 高级参数往返)。**硬约束:跨运行时归档同格式可互读**——两侧同包同 `.zst` 格式天然满足,一台机器上 Electron 归档↔Electrobun 还原互通。
 - `WindowHost`:`createMainWindow(opts)` 仅负责窗口生命周期与 renderer 加载;**bridge/注入接线不塞进此接口**,收敛到 `BridgeServer` + bootstrap,避免职责对半泄漏。
 - `AppHost`:`whenReady()`、`onAllWindowsClosed(cb)`(darwin 分支归属在此接口内明确)、`onBeforeQuit(cb)`、`setName(name)`、`quit()`。
 - `BridgeServer`:`handle(channel, fn)`、`emit(event, payload)`;为每次 invoke 注入与本次调用绑定的 `emitProgress`。
@@ -142,6 +142,8 @@ src/
 - 模块解析:两套 entry 静态 import 各自 platform;打包标记对端运行时模块为 external。
 - **包管理双轨**:Electrobun 侧用 `bun install`、Electron 侧 native(better-sqlite3/zstd-napi)依赖 `npm`/electron-builder 的 ABI 处理;明确各自包管理器,避免交叉污染 node_modules / lockfile 双写摩擦。
 - 测试矩阵:`bun test`(核心)+ electron runner(兼容)。
+- **Linux 运行前置**:Electrobun 需系统 appindicator 托盘库链(`libayatana-appindicator3-1` 等),纳入开发/打包/CI 环境清单(详见 `docs/superpowers/spike-results/2026-06-17-phase0.md`)。
+- **Electrobun 真实 API**(Phase 0 实测,供 Phase 1–3 依据):RPC 用 `BrowserView.defineRPC({bun, webview})`、渲染侧命名导入 `import { Electroview } from 'electrobun/view'`、CLI 用 `electrobun dev`/`build`(无 `launch`)、config 用 `build.bun.entrypoint`+`build.views.<name>.entrypoint`+`build.copy`+`bundleCEF`。
 
 ## 12. 实现阶段(一个计划,8 面全覆盖,带 gate)
 
@@ -174,12 +176,14 @@ src/
 | **Electrobun 弃坑/beta 关键 bug** | 默认运行时不可靠 | §16 回滚:Electron 随时可设回默认 |
 | Electrobun 版本定位 | — | 实为 1.18.x 发行版(保留 beta 通道),API 较稳但 Linux/WSL 实战样本少 |
 | RPC 表达力 | (已证实成立,降级) | `defineRPC` 四向 + 结构化 payload 原生支持;仅需核 `maxRequestTime` 对长通道 |
+| **Linux/WSL 缺 appindicator 托盘库链** | 起窗时 `libNativeWrapper.so` 加载失败 | 运行前置装 `libayatana-appindicator3-1` 链;无 root 可 LD_LIBRARY_PATH 注入(见 spike-results);打包/CI 须纳入 |
+| 起窗 / worker / 压缩 / 打包可行性 | (Phase 0 已全部验证 PASS) | 起窗无需 CEF、worker_threads 无需 fallback、zstd-napi 维持、Bun.build 打 React 成功 |
 
 ## 14. 开放问题(经一轮核查后的剩余未知,留待实测)
 
-1. **WSL/WSLg 下 WebKitGTK 能否起窗**(官方文档零提及)——Phase 0.1。
-2. **zstd-napi N-API 在 Bun 能否加载**——Phase 0.4。
-3. **Bun.build 对 React 19 + 现有 vite 插件链的等价性**——Phase 0.8。
+1. ~~WSL/WSLg 下 WebKitGTK 能否起窗~~ **Phase 0 已验证 PASS**:WSLg + native WebKitGTK 起窗成功,无需 CEF(新前置:Linux 需 appindicator 托盘库链,见 §11/§13)。
+2. ~~zstd-napi N-API 在 Bun 能否加载~~ **Phase 0 已验证 PASS**:加载 + level19/LDM/nbWorkers2 往返成功。
+3. Bun.build 打 React 19 **Phase 0 已验证 PASS**(974KB bundle);现有 vite 插件链(CSS/别名/SVG 等)逐项等价性仍需 Phase 2 迁移时核。
 4. Electrobun RPC `maxRequestTime` 能否逐通道覆盖(文档只见 RPC 级)。
 5. bun:sqlite `transaction(fn)()` 闭包内同步 `lastInsertRowid` 的精确语义——Phase 0.2。
 6. `node:fs` 同步 API 跨设备 rename/symlink 在 Bun 的精确行为——Phase 0.5。
