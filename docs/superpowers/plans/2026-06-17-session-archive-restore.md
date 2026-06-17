@@ -44,9 +44,9 @@
 
 Run:
 ```bash
-npm install tar@^7 && npm install -D @types/tar
+npm install tar@^7
 ```
-Expected: `package.json` 的 dependencies 出现 `tar`,devDependencies 出现 `@types/tar`,无安装错误。
+Expected: `package.json` 的 dependencies 出现 `tar`(v7+),无安装错误。**勿装 `@types/tar`**——它对应 tar v6,与 v7 自带的类型声明冲突。
 
 - [ ] **Step 2: Source 接口加两根**
 
@@ -108,7 +108,20 @@ CREATE TABLE IF NOT EXISTS restores (
   target_dir_abs TEXT, target_folder TEXT, backup_path TEXT, phase TEXT, status TEXT, restored_at TEXT);
 ```
 
-> 注:`openDb`(db.ts:14)每次启动都 `db.exec(SCHEMA_SQL)`,`CREATE TABLE IF NOT EXISTS` 对既有库幂等,无需手写迁移脚本。`SCHEMA_VERSION` 仅作语义标记。
+> 注:`openDb`(db.ts:14)每次启动都 `db.exec(SCHEMA_SQL)`,`CREATE TABLE IF NOT EXISTS` 对既有库幂等,无需手写迁移脚本。
+
+并在 `src/main/db/db.ts` 的 `openDb` 里让既有库也回写版本号(现有逻辑只在 meta 空时 INSERT,既有库会停在旧版本)。把:
+
+```typescript
+  if (!ver) db.prepare('INSERT INTO meta (schema_version) VALUES (?)').run(SCHEMA_VERSION)
+```
+
+改为:
+
+```typescript
+  if (!ver) db.prepare('INSERT INTO meta (schema_version) VALUES (?)').run(SCHEMA_VERSION)
+  else if (ver.schema_version !== SCHEMA_VERSION) db.prepare('UPDATE meta SET schema_version=?').run(SCHEMA_VERSION)
+```
 
 - [ ] **Step 5: 验证类型与既有测试不破**
 
@@ -153,9 +166,11 @@ describe('archive_versions / restores', () => {
     expect(db.getArchiveVersions('s1')).toHaveLength(0)
   })
 
-  it('还原记录:插入→推进 phase→置 done→列 pending', () => {
+  it('还原记录:插入→回填 backupPath→推进 phase→置 done→列 pending', () => {
     const db = openDb(':memory:')
-    const rid = db.insertRestore({ versionId: 1, sessionId: 's1', sourceCwd: '/work/proj', targetDirAbs: '/work/proj', targetFolder: '-work-proj', backupPath: '/b/1-s1' })
+    const rid = db.insertRestore({ versionId: 1, sessionId: 's1', sourceCwd: '/work/proj', targetDirAbs: '/work/proj', targetFolder: '-work-proj' })
+    db.setRestoreBackupPath(rid, `/b/${rid}-s1`)
+    expect(db.getRestore(rid).backupPath).toBe(`/b/${rid}-s1`)
     expect(db.getPendingRestores()).toHaveLength(1)
     db.setRestorePhase(rid, 'backup_done')
     expect(db.getRestore(rid).phase).toBe('backup_done')
@@ -206,10 +221,13 @@ Expected: FAIL —「db.insertArchiveVersion is not a function」。
     getPendingArchiveVersions(): any[] {
       return (db.prepare("SELECT * FROM archive_versions WHERE status='pending'").all() as any[]).map(mapVersion)
     },
-    insertRestore(r: { versionId: number; sessionId: string; sourceCwd: string; targetDirAbs: string; targetFolder: string; backupPath: string }): number {
+    insertRestore(r: { versionId: number; sessionId: string; sourceCwd: string; targetDirAbs: string; targetFolder: string }): number {
       const row = db.prepare(`INSERT INTO restores (version_id,session_id,source_cwd,target_dir_abs,target_folder,backup_path,phase,status,restored_at)
-        VALUES (@versionId,@sessionId,@sourceCwd,@targetDirAbs,@targetFolder,@backupPath,NULL,'pending',@now)`).run({ ...r, now: now() })
+        VALUES (@versionId,@sessionId,@sourceCwd,@targetDirAbs,@targetFolder,'',NULL,'pending',@now)`).run({ ...r, now: now() })
       return Number(row.lastInsertRowid)
+    },
+    setRestoreBackupPath(id: number, backupPath: string) {
+      db.prepare('UPDATE restores SET backup_path=? WHERE id=?').run(backupPath, id)
     },
     setRestorePhase(id: number, phase: 'staging_done' | 'backup_done' | 'commit_done') {
       db.prepare('UPDATE restores SET phase=? WHERE id=?').run(phase, id)
@@ -370,9 +388,9 @@ function srcTree() {
 }
 
 describe('tarPack', () => {
-  it('manifest 记录 file 的 sha256、symlink 的目标、不解引用', () => {
+  it('manifest 记录 file 的 sha256、symlink 的目标、不解引用', async () => {
     const d = srcTree()
-    const m = buildManifest(d, ['s1.jsonl', 's1'])
+    const m = await buildManifest(d, ['s1.jsonl', 's1'])
     const link = m.entries.find((e) => e.rel === 's1/linky')!
     expect(link.type).toBe('symlink')
     expect(link.linkTarget).toBe('/some/external/target')
@@ -385,26 +403,26 @@ describe('tarPack', () => {
     const d = srcTree()
     const out = mkdtempSync(join(tmpdir(), 'tarout-'))
     const tgz = join(out, 'content.tar.gz')
-    const manifest = buildManifest(d, ['s1.jsonl', 's1'])
+    const manifest = await buildManifest(d, ['s1.jsonl', 's1'])
     await packTree(d, ['s1.jsonl', 's1'], tgz)
     const dest = join(out, 'unpacked'); mkdirSync(dest)
     await unpackTarGz(tgz, dest)
     expect(readFileSync(join(dest, 's1.jsonl'))).toEqual(readFileSync(join(d, 's1.jsonl')))
     expect(lstatSync(join(dest, 's1', 'linky')).isSymbolicLink()).toBe(true)
     expect(readlinkSync(join(dest, 's1', 'linky'))).toBe('/some/external/target')
-    expect(verifyAgainstManifest(dest, manifest)).toEqual({ ok: true, mismatches: [] })
+    expect(await verifyAgainstManifest(dest, manifest)).toEqual({ ok: true, mismatches: [] })
   })
 
   it('校验失败时报告不匹配条目', async () => {
     const d = srcTree()
     const out = mkdtempSync(join(tmpdir(), 'tarout2-'))
     const tgz = join(out, 'content.tar.gz')
-    const manifest = buildManifest(d, ['s1.jsonl', 's1'])
+    const manifest = await buildManifest(d, ['s1.jsonl', 's1'])
     await packTree(d, ['s1.jsonl', 's1'], tgz)
     const dest = join(out, 'unpacked'); mkdirSync(dest)
     await unpackTarGz(tgz, dest)
     writeFileSync(join(dest, 's1.jsonl'), 'tampered')
-    const res = verifyAgainstManifest(dest, manifest)
+    const res = await verifyAgainstManifest(dest, manifest)
     expect(res.ok).toBe(false)
     expect(res.mismatches).toContain('s1.jsonl')
   })
@@ -422,8 +440,9 @@ Expected: FAIL —「buildManifest is not a function」。
 
 ```typescript
 import { createHash } from 'node:crypto'
-import { readFileSync, readdirSync, lstatSync, readlinkSync } from 'node:fs'
+import { createReadStream, readdirSync, lstatSync, readlinkSync } from 'node:fs'
 import { join } from 'node:path'
+import { pipeline } from 'node:stream/promises'
 import * as tar from 'tar'
 
 export interface ManifestEntry {
@@ -437,10 +456,17 @@ export interface Manifest { entries: ManifestEntry[] }
 
 export function sha256Buf(buf: Buffer): string { return createHash('sha256').update(buf).digest('hex') }
 
+// 流式算文件 sha256,绝不一次性把大文件读进内存(主 jsonl 可达 100MB+,对齐 mover/scanner 的流式纪律)
+export async function sha256File(abs: string): Promise<string> {
+  const h = createHash('sha256')
+  await pipeline(createReadStream(abs), h)
+  return h.digest('hex')
+}
+
 // 遍历 cwd 下的若干顶层相对路径(文件或目录),用 lstat 不跟随 symlink,产出逐条目清单
-export function buildManifest(cwd: string, roots: string[]): Manifest {
+export async function buildManifest(cwd: string, roots: string[]): Promise<Manifest> {
   const entries: ManifestEntry[] = []
-  const walk = (rel: string) => {
+  const walk = async (rel: string) => {
     const abs = join(cwd, rel)
     const st = lstatSync(abs)
     if (st.isSymbolicLink()) {
@@ -448,13 +474,12 @@ export function buildManifest(cwd: string, roots: string[]): Manifest {
       entries.push({ rel, type: 'symlink', size: 0, sha256: sha256Buf(Buffer.from(target)), linkTarget: target })
     } else if (st.isDirectory()) {
       entries.push({ rel, type: 'dir', size: 0, sha256: '' })
-      for (const e of readdirSync(abs).sort()) walk(join(rel, e))
+      for (const e of readdirSync(abs).sort()) await walk(join(rel, e))
     } else {
-      const buf = readFileSync(abs)
-      entries.push({ rel, type: 'file', size: buf.length, sha256: sha256Buf(buf) })
+      entries.push({ rel, type: 'file', size: st.size, sha256: await sha256File(abs) })
     }
   }
-  for (const r of roots) walk(r)
+  for (const r of roots) await walk(r)
   return { entries }
 }
 
@@ -467,8 +492,8 @@ export async function unpackTarGz(tarGz: string, destDir: string): Promise<void>
   await tar.extract({ file: tarGz, cwd: destDir })
 }
 
-// 解包目录按 manifest 逐条目校验:file 比 size+sha256;symlink 比 readlink 目标;dir 比存在性
-export function verifyAgainstManifest(dir: string, manifest: Manifest): { ok: boolean; mismatches: string[] } {
+// 解包目录按 manifest 逐条目校验:file 比 size+流式 sha256;symlink 比 readlink 目标;dir 比存在性
+export async function verifyAgainstManifest(dir: string, manifest: Manifest): Promise<{ ok: boolean; mismatches: string[] }> {
   const mismatches: string[] = []
   for (const e of manifest.entries) {
     const abs = join(dir, e.rel)
@@ -479,8 +504,7 @@ export function verifyAgainstManifest(dir: string, manifest: Manifest): { ok: bo
       } else if (e.type === 'dir') {
         if (!st.isDirectory()) mismatches.push(e.rel)
       } else {
-        const buf = readFileSync(abs)
-        if (buf.length !== e.size || sha256Buf(buf) !== e.sha256) mismatches.push(e.rel)
+        if (st.size !== e.size || (await sha256File(abs)) !== e.sha256) mismatches.push(e.rel)
       }
     } catch { mismatches.push(e.rel) }
   }
@@ -579,7 +603,7 @@ Expected: FAIL —「snapshotSession is not a function」。
 `src/main/core/archiver.ts`(本任务先建文件 + snapshot;后续任务在同文件追加):
 
 ```typescript
-import { statSync, existsSync, mkdirSync, writeFileSync, readFileSync, rmSync, readdirSync, renameSync } from 'node:fs'
+import { statSync, lstatSync, existsSync, mkdirSync, writeFileSync, readFileSync, rmSync, readdirSync, renameSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import type { Db } from '../db/db'
 import { LIVE_MTIME_THRESHOLD_MS } from '@shared/constants'
@@ -591,16 +615,25 @@ import { safeRename } from './fsMove'
 export interface ArchiverEnv { projectsRoot: string; archiveRoot: string; backupsRoot: string; claudeJsonPath?: string; db: Db }
 export interface ArchiveResult { sessionId: string; status: 'done' | 'skipped' | 'failed'; versionId?: number; error?: string }
 
-// 会话子树要打包的顶层相对路径:主 jsonl + 同名 sidecar 目录(存在才含)
+// 会话子树的顶层条目恒为这两类:主 jsonl + 同名 sidecar 目录。rootsFor(打包)与 clearSessionEntries(清理)
+// 必须对应同一集合——若未来顶层条目扩展,两处需同步修改。
 function rootsFor(folder: string, sessionId: string): string[] {
   const roots = [`${sessionId}.jsonl`]
   if (existsSync(join(folder, sessionId))) roots.push(sessionId)
   return roots
 }
 
-// 递归字节统计(lstat 不跟随 symlink)
+// 删除目标文件夹下某会话的全部顶层条目(主 jsonl + sidecar 目录)。供 reconcile/undo 在搬回备份前清空目标,
+// 避免半搬入的版本残留;与 rootsFor 对应同一条目集合。
+function clearSessionEntries(folder: string, sessionId: string): void {
+  try { rmSync(join(folder, `${sessionId}.jsonl`), { force: true }) } catch {}
+  try { rmSync(join(folder, sessionId), { recursive: true, force: true }) } catch {}
+}
+
+// 递归字节统计:用 lstat 不跟随 symlink(归档/备份区可能含指向外部大目录的 symlink,跟随会爆量),symlink 计 0
 function treeBytes(abs: string): number {
-  const st = statSync(abs)
+  const st = lstatSync(abs)
+  if (st.isSymbolicLink()) return 0
   if (st.isDirectory()) return readdirSync(abs).reduce((a, e) => a + treeBytes(join(abs, e)), 0)
   return st.size
 }
@@ -631,14 +664,15 @@ async function buildVersion(sessionId: string, kind: 'snapshot' | 'archive', env
   try {
     mkdirSync(staging, { recursive: true })
     const roots = rootsFor(found.folder, sessionId)
-    const manifest = buildManifest(found.folder, roots)
+    const manifest = await buildManifest(found.folder, roots)
     const tgz = join(staging, 'content.tar.gz')
     await packTree(found.folder, roots, tgz)
     writeFileSync(join(staging, 'manifest.json'), JSON.stringify(manifest))
 
-    // 防撕裂:重新 stat 主 jsonl,size/mtime 变化说明快照期间被写
+    // 防撕裂:重新 stat 主 jsonl 与 sidecar 子树,size/mtime 或 sidecar 字节变化说明快照期间被写
     const st1 = statSync(found.jsonl)
-    if (st1.size !== st0.size || st1.mtimeMs !== st0.mtimeMs) {
+    const sidecarBytes1 = hasSidecar && existsSync(sidecarDir) ? treeBytes(sidecarDir) : 0
+    if (st1.size !== st0.size || st1.mtimeMs !== st0.mtimeMs || sidecarBytes1 !== sidecarBytes) {
       rmSync(staging, { recursive: true, force: true }); env.db.deleteArchiveVersion(versionId)
       return { sessionId, status: 'skipped', error: '快照期间会话被写入,请稍后重试' }
     }
@@ -742,14 +776,24 @@ export async function archiveSession(sessionId: string, env: ArchiverEnv): Promi
   if (!existsSync(tgz) || statSync(tgz).size !== v.gzTotalBytes) {
     return { sessionId, status: 'failed', versionId: built.versionId, error: '归档包完整性校验失败,原件保留' }
   }
-  // 完整性通过 → 移除原件(jsonl + sidecar 目录)
-  try { rmSync(found.jsonl, { force: true }) } catch {}
-  const sidecar = join(found.folder, sessionId)
-  if (existsSync(sidecar)) try { rmSync(sidecar, { recursive: true, force: true }) } catch {}
+  // 完整性通过 → 移除原件(jsonl + sidecar 目录)。删除失败则中止:保留原件、不删索引行,避免索引与磁盘漂移
+  try {
+    rmSync(found.jsonl, { force: true })
+    const sidecar = join(found.folder, sessionId)
+    if (existsSync(sidecar)) rmSync(sidecar, { recursive: true, force: true })
+  } catch (e: any) {
+    return { sessionId, status: 'failed', versionId: built.versionId, error: `归档版本已生成,但移除原件失败(原件保留): ${String(e?.message ?? e)}` }
+  }
   env.db.deleteSession(sessionId)
   return built
 }
 ```
+
+> 删原件前的注释更正:任一步在「删除原件」之前失败,原件原样未动,版本要么 pending(被 reconcile 清)要么 complete(成了一个普通 archive 版本,无害)。删除原件失败则返回 failed 且**保留原件、不删 sessions 行**,可安全重试;重试会再建一个 archive 版本(允许重复,旧版本可在时间线手动删)。
+>
+> **完整性校验(对 spec §5 包级 `gz_sha256` 的有意偏离):** 真正的内容完整性由 manifest 逐条目 sha256(还原解包后逐文件校验,Task7)保证;归档删原件前的包级闸门只查 `content.tar.gz` 字节数 == `gzTotalBytes`。放弃 spec §5 的包级 `gz_sha256`——gzip 头含 mtime/OS 等非确定性字节,包级哈希不稳定且非必要。
+>
+> **projects 行去留(对照 spec §3.7):** 本计划全程不触碰 `.claude.json`——spec §3.7 的「保留条目」指 `.claude.json` 的 `projects[cwd]` 字典项,本计划满足。SQLite 的 `projects` 表是显示缓存,归档移走原件后交由下次 `refresh:run` 据实重算(该 project 若 `.claude.json` 仍有条目则保留,否则按既有 scanner 逻辑处理),archiver 不主动维护它。
 
 - [ ] **Step 4: 运行确认通过**
 
@@ -820,6 +864,28 @@ describe('restoreVersion', () => {
     expect(existsSync(join(w.fdir, 's1', 'extra.txt'))).toBe(false)
   })
 
+  it('版本含 sidecar:用版本 sidecar 整体替换现状,现状改动与多余文件进备份', async () => {
+    const w = world(); const db = openDb(':memory:')
+    // 快照时已有 sidecar keep.txt
+    mkdirSync(join(w.fdir, 's1'), { recursive: true })
+    writeFileSync(join(w.fdir, 's1', 'keep.txt'), 'v1-keep')
+    const old = new Date(Date.now() - 600_000); utimesSync(w.jsonl, old, old)
+    const snap = await snapshotSession('s1', envOf(w, db))
+    // 演进:keep.txt 改内容 + 新增 extra.txt
+    writeFileSync(join(w.fdir, 's1', 'keep.txt'), 'v2-keep-changed')
+    writeFileSync(join(w.fdir, 's1', 'extra.txt'), 'only-current')
+    utimesSync(w.jsonl, old, old)
+    const res = await restoreVersion(snap.versionId!, envOf(w, db))
+    expect(res.status).toBe('done')
+    // 目标 sidecar 回到版本内容:keep.txt 复原、extra.txt 不残留
+    expect(readFileSync(join(w.fdir, 's1', 'keep.txt'), 'utf8')).toBe('v1-keep')
+    expect(existsSync(join(w.fdir, 's1', 'extra.txt'))).toBe(false)
+    // 备份区是还原前现状完整镜像
+    const r = db.getRestore(res.restoreId!)
+    expect(readFileSync(join(r.backupPath, 's1', 'keep.txt'), 'utf8')).toBe('v2-keep-changed')
+    expect(readFileSync(join(r.backupPath, 's1', 'extra.txt'), 'utf8')).toBe('only-current')
+  })
+
   it('编码碰撞:目标文件夹被不同真实 cwd 占用 → 阻断', async () => {
     const w = world(); const db = openDb(':memory:')
     const snap = await snapshotSession('s1', envOf(w, db))
@@ -849,14 +915,18 @@ import { encodePath } from './pathCodec'
 
 export interface RestoreResult { status: 'done' | 'skipped' | 'failed'; restoreId?: number; error?: string }
 
-// 还原前的目标文件夹冲突 / 编码碰撞预检(对照 mover.previewMove 的 encode-collision 规则)
+// 还原前的目标文件夹冲突 / 编码碰撞预检(对照 mover.previewMove 的三道规则)
 async function restorePrecheck(targetFolder: string, sessionId: string, sourceCwd: string): Promise<string | null> {
   if (!existsSync(targetFolder)) return null
   if (!statSync(targetFolder).isDirectory()) return '目标文件夹路径被非目录文件占用'
   for (const f of readdirSync(targetFolder)) {
     if (!f.endsWith('.jsonl')) continue
-    if (f === `${sessionId}.jsonl`) continue   // 自身旧件,允许(整体替换会备份它)
     const m = await scanSessionFile(join(targetFolder, f))
+    if (f === `${sessionId}.jsonl`) {
+      // 自身旧件:整体替换会备份它,通常放行;但若其真实 cwd 与本版本不同,说明是另一来源的同 id 会话 → 阻断(spec §6.3 第三道)
+      if (m.cwd && m.cwd !== sourceCwd) return `目标处同 id 会话的 cwd(${m.cwd})与版本不一致,疑似另一来源,已阻断`
+      continue
+    }
     if (m.cwd && m.cwd !== sourceCwd) return `目标文件夹已被 ${m.cwd} 占用(编码碰撞)`
   }
   return null
@@ -884,16 +954,17 @@ export async function restoreVersion(versionId: number, env: ArchiverEnv): Promi
   const manifest = JSON.parse(readFileSync(join(vdir, 'manifest.json'), 'utf8')) as Manifest
   if (!existsSync(tgz)) return { status: 'failed', error: '归档包缺失' }
 
-  const restoreId = env.db.insertRestore({ versionId, sessionId, sourceCwd, targetDirAbs: sourceCwd, targetFolder, backupPath: join(env.backupsRoot, `${0}-${sessionId}`) })
+  const restoreId = env.db.insertRestore({ versionId, sessionId, sourceCwd, targetDirAbs: sourceCwd, targetFolder })
   const backupPath = join(env.backupsRoot, `${restoreId}-${sessionId}`)
-  // 回填真实 backupPath(insert 时 restoreId 未知,用占位后更新)
-  env.db.raw.prepare('UPDATE restores SET backup_path=? WHERE id=?').run(backupPath, restoreId)
+  // 立即回填真实 backupPath(用主键命名,杜绝占位串号);此刻 phase 仍为 NULL,
+  // 若此前崩溃 reconcile 走"无 phase → 删 staging 置 failed"分支,不读 backup_path,安全。
+  env.db.setRestoreBackupPath(restoreId, backupPath)
   const staging = join(env.archiveRoot, sessionId, `.restore-staging-${restoreId}`)
   try {
     // 1) staging 解包 + 校验
     mkdirSync(staging, { recursive: true })
     await unpackTarGz(tgz, staging)
-    const vr = verifyAgainstManifest(staging, manifest)
+    const vr = await verifyAgainstManifest(staging, manifest)
     if (!vr.ok) { rmSync(staging, { recursive: true, force: true }); env.db.setRestoreStatus(restoreId, 'failed'); return { status: 'failed', restoreId, error: `校验失败: ${vr.mismatches.join(',')}` } }
     env.db.setRestorePhase(restoreId, 'staging_done')
 
@@ -920,7 +991,7 @@ export async function restoreVersion(versionId: number, env: ArchiverEnv): Promi
 }
 ```
 
-> `env.db.raw` 已在 db.ts:20 暴露,用于回填 backup_path。`encodePath` 从 `./pathCodec` 引入(与 mover 一致)。
+> `encodePath` 从 `./pathCodec` 引入(与 mover 一致)。`backup_path` 经 `setRestoreBackupPath`(Task2)写入,不用 raw SQL;命名用 `restoreId` 主键,杜绝占位串号。
 
 - [ ] **Step 4: 运行确认通过**
 
@@ -971,6 +1042,16 @@ describe('undoRestore / deleteVersion / usage', () => {
     expect(listVersions('s1', envOf(w, db))).toHaveLength(0)
     expect(existsSync(join(w.archiveRoot, 's1', String(snap.versionId)))).toBe(false)
   })
+
+  it('多版本:同会话两次快照产生两个独立 complete 版本', async () => {
+    const w = world(); const db = openDb(':memory:')
+    const v1 = await snapshotSession('s1', envOf(w, db))
+    const v2 = await snapshotSession('s1', envOf(w, db))
+    expect(v1.versionId).not.toBe(v2.versionId)
+    expect(listVersions('s1', envOf(w, db))).toHaveLength(2)
+    expect(existsSync(join(w.archiveRoot, 's1', String(v1.versionId)))).toBe(true)
+    expect(existsSync(join(w.archiveRoot, 's1', String(v2.versionId)))).toBe(true)
+  })
 })
 ```
 
@@ -988,9 +1069,7 @@ export function undoRestore(restoreId: number, env: ArchiverEnv): void {
   if (!r || r.status !== 'done') throw new Error('该还原不可撤销')
   const targetFolder = r.targetFolder as string
   const sessionId = r.sessionId as string
-  // 删目标当前(本次换入的)内容
-  try { rmSync(join(targetFolder, `${sessionId}.jsonl`), { force: true }) } catch {}
-  try { rmSync(join(targetFolder, sessionId), { recursive: true, force: true }) } catch {}
+  clearSessionEntries(targetFolder, sessionId)   // 删本次换入的内容(单点 helper,与 reconcile 一致)
   // 搬回备份(整体镜像)
   const bMain = join(r.backupPath, `${sessionId}.jsonl`)
   const bSidecar = join(r.backupPath, sessionId)
@@ -1016,12 +1095,13 @@ export function archiveUsage(env: ArchiverEnv): { total: number; backups: number
   let total = 0, backups = 0
   const sizeOf = (abs: string): number => {
     if (!existsSync(abs)) return 0
-    const st = statSync(abs)
+    const st = lstatSync(abs)
+    if (st.isSymbolicLink()) return 0          // 绝不跟随 symlink 统计外部目标
     return st.isDirectory() ? readdirSync(abs).reduce((a, e) => a + sizeOf(join(abs, e)), 0) : st.size
   }
   if (existsSync(env.archiveRoot)) for (const sid of readdirSync(env.archiveRoot)) {
     const sdir = join(env.archiveRoot, sid)
-    if (!statSync(sdir).isDirectory()) continue
+    if (!lstatSync(sdir).isDirectory()) continue
     for (const ver of readdirSync(sdir)) {
       if (ver.startsWith('.')) continue
       const s = sizeOf(join(sdir, ver)); byVersion[ver] = s; total += s
@@ -1086,25 +1166,34 @@ describe('archiverReconcile', () => {
     expect(existsSync(staging)).toBe(false)
   })
 
-  it('pending restore 处于 backup_done:把备份搬回原位、置 failed', () => {
+  it('pending restore 处于 backup_done:清除半搬入残留 + 把备份搬回原位、置 failed', () => {
     const w = base(); const db = openDb(':memory:')
     const targetMain = join(w.fdir, 's1.jsonl')
-    const rid = db.insertRestore({ versionId: 1, sessionId: 's1', sourceCwd: w.src, targetDirAbs: w.src, targetFolder: w.fdir, backupPath: join(w.backupsRoot, `1-s1`) })
+    const rid = db.insertRestore({ versionId: 1, sessionId: 's1', sourceCwd: w.src, targetDirAbs: w.src, targetFolder: w.fdir })
+    db.setRestoreBackupPath(rid, join(w.backupsRoot, `${rid}-s1`))
     db.setRestorePhase(rid, 'backup_done')
-    // 现状已搬进备份、目标尚未换入(模拟崩溃)
-    mkdirSync(join(w.backupsRoot, '1-s1'), { recursive: true })
-    writeFileSync(join(w.backupsRoot, '1-s1', 's1.jsonl'), 'pre-restore state\n')
+    // 备份区已存还原前现状
+    mkdirSync(join(w.backupsRoot, `${rid}-s1`), { recursive: true })
+    writeFileSync(join(w.backupsRoot, `${rid}-s1`, 's1.jsonl'), 'pre-restore state\n')
+    // 目标位置有"半搬入"的版本残留(主文件 + 部分 sidecar),reconcile 必须先清除再搬回备份
+    writeFileSync(targetMain, 'half-applied version\n')
+    mkdirSync(join(w.fdir, 's1'), { recursive: true }); writeFileSync(join(w.fdir, 's1', 'leftover.txt'), 'half')
     archiverReconcile(envOf(w, db))
     expect(readFileSync(targetMain, 'utf8')).toBe('pre-restore state\n')
+    expect(existsSync(join(w.fdir, 's1', 'leftover.txt'))).toBe(false)   // 半搬入残留被清除
     expect(db.getRestore(rid).status).toBe('failed')
   })
 
-  it('pending restore 处于 commit_done:补记 done', () => {
+  it('pending restore 处于 commit_done:补记 done,不回滚目标内容', () => {
     const w = base(); const db = openDb(':memory:')
-    const rid = db.insertRestore({ versionId: 1, sessionId: 's1', sourceCwd: w.src, targetDirAbs: w.src, targetFolder: w.fdir, backupPath: join(w.backupsRoot, `1-s1`) })
+    const targetMain = join(w.fdir, 's1.jsonl')
+    writeFileSync(targetMain, 'restored content\n')   // 已换入的还原结果
+    const rid = db.insertRestore({ versionId: 1, sessionId: 's1', sourceCwd: w.src, targetDirAbs: w.src, targetFolder: w.fdir })
+    db.setRestoreBackupPath(rid, join(w.backupsRoot, `${rid}-s1`))
     db.setRestorePhase(rid, 'commit_done')
     archiverReconcile(envOf(w, db))
     expect(db.getRestore(rid).status).toBe('done')
+    expect(readFileSync(targetMain, 'utf8')).toBe('restored content\n')   // commit_done=已完成,不动内容
   })
 })
 ```
@@ -1130,11 +1219,10 @@ export function archiverReconcile(env: ArchiverEnv): void {
     const staging = join(env.archiveRoot, r.sessionId, `.restore-staging-${r.id}`)
     if (r.phase === 'commit_done') { env.db.setRestoreStatus(r.id, 'done'); continue }
     if (r.phase === 'backup_done') {
-      // 把备份现状搬回目标(前滚到"还原前"),再清 staging
+      // 清除半搬入的版本残留(单点 clearSessionEntries,与换入条目集合对应),再把备份现状搬回目标(前滚到"还原前")
       const targetFolder = r.targetFolder as string, sessionId = r.sessionId as string
+      clearSessionEntries(targetFolder, sessionId)
       const bMain = join(r.backupPath, `${sessionId}.jsonl`), bSidecar = join(r.backupPath, sessionId)
-      try { rmSync(join(targetFolder, `${sessionId}.jsonl`), { force: true }) } catch {}
-      try { rmSync(join(targetFolder, sessionId), { recursive: true, force: true }) } catch {}
       if (existsSync(bMain)) safeRename(bMain, join(targetFolder, `${sessionId}.jsonl`))
       if (existsSync(bSidecar)) safeRename(bSidecar, join(targetFolder, sessionId))
     }
@@ -1339,6 +1427,7 @@ export function ArchiveTimelineView({ onClose }: Props) {
   const [usage, setUsage] = useState<ArchiveUsage>({ total: 0, backups: 0, byVersion: {} })
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string>('')
+  const [lastRestoreId, setLastRestoreId] = useState<number | null>(null)
 
   const load = async () => {
     setVersions(await window.api.archiveAllVersions())
@@ -1351,8 +1440,16 @@ export function ArchiveTimelineView({ onClose }: Props) {
   const onRestore = async (versionId: number) => {
     setBusy(true)
     const r = await window.api.archiveRestore(versionId)
-    setMsg(r.status === 'done' ? '已还原(原现状已备份)' : `未还原:${r.error ?? r.status}`)
+    if (r.status === 'done') { setLastRestoreId(r.restoreId ?? null); setMsg('已还原(原现状已搬入备份区,可撤销)') }
+    else { setMsg(`未还原:${r.error ?? r.status}`) }
     setBusy(false); await load()
+  }
+  const onUndo = async () => {
+    if (lastRestoreId == null) return
+    setBusy(true)
+    try { await window.api.archiveUndoRestore(lastRestoreId); setMsg('已撤销还原(目标恢复为还原前现状)') }
+    catch (e) { setMsg(`撤销失败:${String(e)}`) }
+    setLastRestoreId(null); setBusy(false); await load()
   }
   const onDelete = async (versionId: number) => {
     setBusy(true); await window.api.archiveDeleteVersion(versionId); setBusy(false); await load()
@@ -1366,7 +1463,7 @@ export function ArchiveTimelineView({ onClose }: Props) {
           <span>归档库 {fmt(usage.total)} · 备份区 {fmt(usage.backups)}</span>
           <button onClick={onClose}>关闭</button>
         </header>
-        {msg && <p className="notice">{msg}</p>}
+        {msg && <p className="notice">{msg} {lastRestoreId != null && <button disabled={busy} onClick={onUndo}>撤销刚才的还原</button>}</p>}
         <table>
           <thead><tr><th>会话</th><th>类型</th><th>标题</th><th>体积</th><th>时间</th><th></th></tr></thead>
           <tbody>
@@ -1431,10 +1528,11 @@ git commit -m "feat: 归档时间线 modal(还原/删除版本 + 占用显示)+ 
 
 ---
 
-## Task 13: 文档更新(README + spec 状态)
+## Task 13: 文档更新(README + 主 spec §10 状态)
 
 **Files:**
 - Modify: `README.md`
+- Modify: `docs/superpowers/specs/2026-06-15-cc-move-session-design.md`(§10 标注已实现)
 
 - [ ] **Step 1: 更新 README**
 
@@ -1453,11 +1551,19 @@ git commit -m "feat: 归档时间线 modal(还原/删除版本 + 占用显示)+ 
 - 归档/还原实现计划:[docs/superpowers/plans/2026-06-17-session-archive-restore.md](docs/superpowers/plans/2026-06-17-session-archive-restore.md)
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: 同步主 spec §10 状态**
+
+在 `docs/superpowers/specs/2026-06-15-cc-move-session-design.md` 的 §10「未来方向」标题下加一行状态标注:
+
+```markdown
+> **状态(2026-06-17 更新):** 本节描述的「全量历史归档与还原」已落地为独立设计与实现,见 [2026-06-17-session-archive-restore-design.md](2026-06-17-session-archive-restore-design.md) 与对应实现计划。下文保留为当初的可扩展性约束记录。
+```
+
+- [ ] **Step 3: Commit**
 
 ```bash
-git add README.md
-git commit -m "docs: README 增补归档/还原能力与文档链接"
+git add README.md docs/superpowers/specs/2026-06-15-cc-move-session-design.md
+git commit -m "docs: README 增补归档/还原能力;主 spec §10 标注已实现"
 ```
 
 ---
@@ -1465,6 +1571,7 @@ git commit -m "docs: README 增补归档/还原能力与文档链接"
 ## 自审清单(实现者在全部任务后核对)
 
 - [ ] **全量回归:** `npm test` 全绿;`npm run build` 与 `npm run e2e` 通过。
-- [ ] **spec 覆盖:** 三操作(快照/归档/还原 Task 5/6/7)、整体替换+差集备份(Task 7)、tar+manifest 校验与 symlink 不解引用(Task 4)、phase 化 reconcile 接入启动/切源(Task 9/10)、per-source 派生(Task 1)、编码碰撞预检(Task 7)、`.claude.json` 不触碰(本计划全程未改 claudeJson,符合 spec §3.7)、归属快照自给自足(Task 5 插入 source_cwd/title)。
+- [ ] **spec 覆盖:** 三操作(快照/归档/还原 Task 5/6/7)、整体替换+差集备份(Task 7,含「版本含 sidecar」用例)、tar+manifest 校验与 symlink 不解引用(Task 4)、phase 化 reconcile 接入启动/切源(Task 9/10)、per-source 派生(Task 1)、编码碰撞+第三道预检(Task 7)、`.claude.json` 不触碰(本计划全程未改 claudeJson,符合 spec §3.7)、归属快照自给自足(Task 5 插入 source_cwd/title)。
+- [ ] **对抗审查修订项已落实:** backup_path 主键命名无占位(Task 7)、reconcile 经 `clearSessionEntries` 清半搬入残留(Task 9)、sha256 全程流式不 readFileSync 大文件(Task 4)、`treeBytes`/`archiveUsage` 用 lstat 不跟随 symlink(Task 5/8)、防撕裂补查 sidecar(Task 5)、删原件失败返回 failed 不删索引(Task 6)、undoRestore 有 UI 入口(Task 12)。
 - [ ] **手动验证(WSL):** 在两个数据源各做一次快照,确认归档/备份目录落在各源 `.claude` 下、两源版本互不串(Task 1 派生 + per-source DB)。
-- [ ] **活跃保护:** 对刚写入的会话快照/归档被拒(Task 5/6 测试已覆盖)。
+- [ ] **活跃保护:** 对刚写入的会话快照/归档被拒(Task 5/6 测试已覆盖);快照期间被写触发防撕裂作废(Task 5)。
