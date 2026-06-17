@@ -88,3 +88,26 @@ async function buildVersion(sessionId: string, kind: 'snapshot' | 'archive', env
 export async function snapshotSession(sessionId: string, env: ArchiverEnv): Promise<ArchiveResult> {
   return buildVersion(sessionId, 'snapshot', env)
 }
+
+// 归档 = 构建 archive 版本(complete 且 gz 校验)后,删除 projects 下原件并从索引移除该会话。
+// 删除原件前确认 content.tar.gz 字节数与表记录一致(不可逆操作前的完整性闸门)。
+export async function archiveSession(sessionId: string, env: ArchiverEnv): Promise<ArchiveResult> {
+  const found = findSessionFile(env.projectsRoot, sessionId)
+  const built = await buildVersion(sessionId, 'archive', env)
+  if (built.status !== 'done' || !built.versionId || !found) return built
+  const v = env.db.getArchiveVersion(built.versionId)
+  const tgz = join(env.archiveRoot, sessionId, String(built.versionId), 'content.tar.gz')
+  if (!existsSync(tgz) || statSync(tgz).size !== v.gzTotalBytes) {
+    return { sessionId, status: 'failed', versionId: built.versionId, error: '归档包完整性校验失败,原件保留' }
+  }
+  // 完整性通过 → 移除原件(jsonl + sidecar 目录)。删除失败则中止:保留原件、不删索引行,避免索引与磁盘漂移
+  try {
+    rmSync(found.jsonl, { force: true })
+    const sidecar = join(found.folder, sessionId)
+    if (existsSync(sidecar)) rmSync(sidecar, { recursive: true, force: true })
+  } catch (e: any) {
+    return { sessionId, status: 'failed', versionId: built.versionId, error: `归档版本已生成,但移除原件失败(原件保留): ${String(e?.message ?? e)}` }
+  }
+  env.db.deleteSession(sessionId)
+  return built
+}
