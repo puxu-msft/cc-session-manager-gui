@@ -2,6 +2,11 @@ import type { ProjectMeta, SessionMeta } from '@shared/types'
 
 // 运行时抽象契约。Electron 与(将来的)Electrobun 各自提供实现,核心装配只依赖这些接口。
 
+// 用户数据目录解析。Electron=app.getPath('userData');Electrobun 自拼并逐平台复刻同一物理路径(spec §7 硬约束)。
+export interface Paths {
+  userData(): string
+}
+
 export interface ScanOutcome { projects: ProjectMeta[]; sessions: SessionMeta[]; aborted: boolean }
 export interface ScanInput { projectsRoot: string; existingRows: unknown[] }
 

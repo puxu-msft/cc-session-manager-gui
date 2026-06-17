@@ -1,16 +1,21 @@
-import { app } from 'electron'
 import { join } from 'node:path'
 import { mkdirSync, existsSync, renameSync } from 'node:fs'
 import { openDb, type Db } from './db/db'
 import { detectSources, type Source } from './sources'
+import type { Paths } from './platform/contract'
 
 // 每个数据源有独立的 sqlite 索引(index-<id>.db),互不混淆。活动源决定 getEnv() 返回哪套路径与 DB。
 let sources: Source[] | null = null
 let activeId: string | null = null
 const dbs = new Map<string, Db>()
 
+// 用户数据目录由运行时注入(Electron=app.getPath('userData');Electrobun 自拼),appState 不再直接依赖 electron。
+let injectedPaths: Paths | null = null
+export function setPaths(p: Paths): void { injectedPaths = p }
+
 function userDataDir(): string {
-  const d = app.getPath('userData')
+  if (!injectedPaths) throw new Error('appState: paths 未初始化(应在启动时 setPaths)')
+  const d = injectedPaths.userData()
   mkdirSync(d, { recursive: true })
   return d
 }

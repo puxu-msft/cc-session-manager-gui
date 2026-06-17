@@ -1,7 +1,8 @@
 import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { registerIpc, abortCurrentScan } from './ipc'
-import { closeDb } from './appState'
+import { closeDb, setPaths } from './appState'
+import { electronPaths } from './platform/electron/paths'
 
 // 显式设定应用名,确保 userData 落在 ~/.config/cc-move-session(而非 dev/未打包启动时回退的 "Electron")。
 // 必须在首次访问 app.getPath('userData') 之前调用。
@@ -21,7 +22,8 @@ function createWindow() {
   else win.loadFile(join(__dirname, '../renderer/index.html'))
 }
 
-app.whenReady().then(() => { registerIpc(); createWindow() })
+// 注入 Electron 的 Paths 实现后再注册 IPC(reconcile 会经 getEnv→userDataDir 用到它)。
+app.whenReady().then(() => { setPaths(electronPaths); registerIpc(); createWindow() })
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
