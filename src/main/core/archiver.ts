@@ -5,6 +5,8 @@ import { LIVE_MTIME_THRESHOLD_MS } from '@shared/constants'
 import { findSessionFile } from './mover'
 import { scanSessionFile } from './jsonlScanner'
 import { buildManifest, packTree, type Manifest } from './tarPack'
+import { unpackTarGz, rebuildSymlinks, verifyAgainstManifest } from './tarPack'
+import { encodePath } from './pathCodec'
 import { safeRename } from './fsMove'
 
 export interface ArchiverEnv { projectsRoot: string; archiveRoot: string; backupsRoot: string; claudeJsonPath?: string; db: Db }
@@ -110,4 +112,84 @@ export async function archiveSession(sessionId: string, env: ArchiverEnv): Promi
   }
   env.db.deleteSession(sessionId)
   return built
+}
+
+export interface RestoreResult { status: 'done' | 'skipped' | 'failed'; restoreId?: number; error?: string }
+
+// 还原前的目标文件夹冲突 / 编码碰撞预检(对照 mover.previewMove 的三道规则:只 scan 一个代表样本,不全量扫)
+async function restorePrecheck(targetFolder: string, sessionId: string, sourceCwd: string): Promise<string | null> {
+  if (!existsSync(targetFolder)) return null
+  if (!statSync(targetFolder).isDirectory()) return '目标文件夹路径被非目录文件占用'
+  // 自身旧件:整体替换会备份它,通常放行;但若其真实 cwd 与本版本不同 → 疑似另一来源同 id,阻断(spec §6.3 第三道)
+  const selfJsonl = join(targetFolder, `${sessionId}.jsonl`)
+  if (existsSync(selfJsonl)) {
+    const ms = await scanSessionFile(selfJsonl)
+    if (ms.cwd && ms.cwd !== sourceCwd) return `目标处同 id 会话的 cwd(${ms.cwd})与版本不一致,疑似另一来源,已阻断`
+  }
+  // 编码碰撞:取一个非自身的代表 jsonl(对齐 mover.previewMove 只 scan 一个样本,避免对大目标全量 scan),cwd ≠ 目标则阻断
+  const other = readdirSync(targetFolder).find((f) => f.endsWith('.jsonl') && f !== `${sessionId}.jsonl`)
+  if (other) {
+    const mo = await scanSessionFile(join(targetFolder, other))
+    if (mo.cwd && mo.cwd !== sourceCwd) return `目标文件夹已被 ${mo.cwd} 占用(编码碰撞)`
+  }
+  return null
+}
+
+// 还原一个 complete 版本到其原 cwd 原位:staging 解包校验 → 备份现状(整体)→ 原子换入。
+export async function restoreVersion(versionId: number, env: ArchiverEnv): Promise<RestoreResult> {
+  const v = env.db.getArchiveVersion(versionId)
+  if (!v || v.status !== 'complete') return { status: 'skipped', error: '版本不存在或未完成' }
+  const sessionId = v.sessionId as string
+  const sourceCwd = v.sourceCwd as string
+  if (!sourceCwd) return { status: 'skipped', error: '版本缺少原 cwd,无法定位还原目标' }
+
+  const targetFolder = join(env.projectsRoot, encodePath(sourceCwd))
+  // 活跃保护:目标已有同 id 且活跃 → 拒绝
+  const targetMain = join(targetFolder, `${sessionId}.jsonl`)
+  if (existsSync(targetMain) && Date.now() - statSync(targetMain).mtimeMs < LIVE_MTIME_THRESHOLD_MS) {
+    return { status: 'skipped', error: '目标会话疑似活跃,请先关闭' }
+  }
+  const block = await restorePrecheck(targetFolder, sessionId, sourceCwd)
+  if (block) return { status: 'skipped', error: block }
+
+  const vdir = join(env.archiveRoot, sessionId, String(versionId))
+  const tgz = join(vdir, 'content.tar.gz')
+  const manifest = JSON.parse(readFileSync(join(vdir, 'manifest.json'), 'utf8')) as Manifest
+  if (!existsSync(tgz)) return { status: 'failed', error: '归档包缺失' }
+
+  const restoreId = env.db.insertRestore({ versionId, sessionId, sourceCwd, targetDirAbs: sourceCwd, targetFolder })
+  const backupPath = join(env.backupsRoot, `${restoreId}-${sessionId}`)
+  // 立即回填真实 backupPath(用主键命名,杜绝占位串号);此刻 phase 仍为 NULL,
+  // 若此前崩溃 reconcile 走"无 phase → 删 staging 置 failed"分支,不读 backup_path,安全。
+  env.db.setRestoreBackupPath(restoreId, backupPath)
+  const staging = join(env.archiveRoot, sessionId, `.restore-staging-${restoreId}`)
+  try {
+    // 1) staging 解包 + 重建 symlink + 校验
+    mkdirSync(staging, { recursive: true })
+    await unpackTarGz(tgz, staging)
+    rebuildSymlinks(staging, manifest)   // symlink 不在 tar 里,依 manifest 手动重建
+    const vr = await verifyAgainstManifest(staging, manifest)
+    if (!vr.ok) { rmSync(staging, { recursive: true, force: true }); env.db.setRestoreStatus(restoreId, 'failed'); return { status: 'failed', restoreId, error: `校验失败: ${vr.mismatches.join(',')}` } }
+    env.db.setRestorePhase(restoreId, 'staging_done')
+
+    // 2) 备份现状(目标里所有现存条目整体搬入 backupPath;归档移走过则为空)
+    mkdirSync(backupPath, { recursive: true })
+    if (existsSync(targetMain)) safeRename(targetMain, join(backupPath, `${sessionId}.jsonl`))
+    const targetSidecar = join(targetFolder, sessionId)
+    if (existsSync(targetSidecar)) safeRename(targetSidecar, join(backupPath, sessionId))
+    env.db.setRestorePhase(restoreId, 'backup_done')
+
+    // 3) 换入:staging 内每个顶层条目搬到目标
+    mkdirSync(targetFolder, { recursive: true })
+    for (const e of readdirSync(staging)) safeRename(join(staging, e), join(targetFolder, e))
+    rmSync(staging, { recursive: true, force: true })
+    env.db.setRestorePhase(restoreId, 'commit_done')
+    env.db.setRestoreStatus(restoreId, 'done')
+    return { status: 'done', restoreId }
+  } catch (e: any) {
+    // 失败由 reconcile 兜底(按 phase),此处仅标 failed 并尽力清 staging
+    try { rmSync(staging, { recursive: true, force: true }) } catch {}
+    env.db.setRestoreStatus(restoreId, 'failed')
+    return { status: 'failed', restoreId, error: String(e?.message ?? e) }
+  }
 }
