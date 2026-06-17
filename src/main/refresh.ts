@@ -17,3 +17,18 @@ export function applyScanToIndex(db: Db, scan: ScanResult, existing: ExistingRow
   })
   return diff
 }
+
+// 单项目落库:只 upsert 该项目与其会话,并删除该项目下已消失的会话(不触碰其它项目)。
+// 供 ipc 的 refresh:project 与集成测试共用。
+export function applyProjectScan(db: Db, projectPathAbs: string, scan: { project: ProjectMeta | null; sessions: SessionMeta[] }): IndexDiff {
+  const existing = (db.getSessions(projectPathAbs) as { session_id: string; size_bytes: number; mtime: number }[])
+    .map((r) => ({ session_id: r.session_id, size_bytes: r.size_bytes, mtime: r.mtime }))
+  const diff = diffSessions(scan.sessions, existing)
+  const movedIds = db.getMovedSessionIds()
+  db.transaction(() => {
+    if (scan.project) db.upsertProject(scan.project)
+    for (const s of scan.sessions) db.upsertSession({ ...s, movedFlag: movedIds.has(s.sessionId), lastMoveId: null })
+    for (const id of diff.removed) db.deleteSession(id)
+  })
+  return diff
+}

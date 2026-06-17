@@ -2,6 +2,7 @@ import { readdirSync, existsSync, statSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import type { SessionMeta, ProjectMeta } from '@shared/types'
 import { scanSessionFile } from './jsonlScanner'
+import { encodePath } from './pathCodec'
 
 // scanAll 的可选项:
 // - reuse:给定 (sessionId, size, mtime),若该文件自上次索引未变则返回缓存的 SessionMeta,从而跳过昂贵的逐行流式解析;返回 null 则照常解析。
@@ -78,4 +79,41 @@ export function diffSessions(fresh: SessionMeta[], existing: { session_id: strin
   }
   const removed = existing.filter((e) => !freshIds.has(e.session_id)).map((e) => e.session_id)
   return { added, removed, changed }
+}
+
+// 只扫单个项目对应的文件夹(encodePath(cwd)),解析其会话并聚合成该项目。
+// 用于"单项目刷新":比全量 scanAll 快得多。返回的 sessions 仅保留 cwd === projectPathAbs 的会话
+// (同一文件夹理论上同 cwd;过滤可防御历史上 cwd 漂移的脏数据)。
+export async function scanProject(projectsRoot: string, projectPathAbs: string, opts: ScanOptions = {}): Promise<{ project: ProjectMeta | null; sessions: SessionMeta[] }> {
+  const fdir = join(projectsRoot, encodePath(projectPathAbs))
+  if (!existsSync(fdir)) return { project: null, sessions: [] }
+  let entries: string[]
+  try { entries = readdirSync(fdir) } catch { return { project: null, sessions: [] } }
+  const files = entries.filter((f) => f.endsWith('.jsonl')).map((f) => join(fdir, f))
+
+  const parsed: SessionMeta[] = []
+  let done = 0
+  for (const path of files) {
+    if (opts.signal?.aborted) throw abortError()
+    try {
+      let meta: SessionMeta | null = null
+      if (opts.reuse) {
+        const st = statSync(path)
+        meta = opts.reuse(basename(path).replace(/\.jsonl$/, ''), st.size, st.mtimeMs)
+      }
+      if (!meta) meta = await scanSessionFile(path)
+      parsed.push(meta)
+    } catch { /* 跳过坏文件 */ }
+    done++
+    opts.onProgress?.(done, files.length, path)
+  }
+
+  const own = parsed.filter((s) => s.cwd === projectPathAbs)
+  if (own.length === 0) return { project: null, sessions: [] }
+  const project: ProjectMeta = {
+    projectPathAbs, folderName: own[0].folderName, existsOnDisk: existsSync(projectPathAbs), inClaudeJson: false,
+    sessionCount: own.length, totalSizeBytes: own.reduce((a, s) => a + s.sizeBytes, 0),
+    lastActivityAt: own.map((s) => s.lastActivityAt).filter(Boolean).sort().pop() ?? null,
+  }
+  return { project, sessions: own }
 }

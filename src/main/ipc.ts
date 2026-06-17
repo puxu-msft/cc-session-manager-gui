@@ -5,7 +5,9 @@ import type { ProjectMeta } from '@shared/types'
 import type { BridgeServer, ScanRunner } from './platform/contract'
 import { ElectronScanRunner } from './platform/electron/scanRunner'
 import { getEnv, listSources, getActiveSourceId, setActiveSourceId } from './appState'
-import { applyScanToIndex } from './refresh'
+import { applyScanToIndex, applyProjectScan } from './refresh'
+import { scanProject } from './core/scanner'
+import { detectChanges } from './core/updates'
 import { listDir } from './core/fsBrowser'
 import { trashUsage, purgeMove, purgeAllTrash } from './trash'
 import { previewMove, executeMove, reconcile, undoMove } from './core/mover'
@@ -53,6 +55,16 @@ export function registerIpc(bridge: BridgeServer, runner?: ScanRunner): void {
     }
     const diff = applyScanToIndex(env.db, { projects, sessions }, existing.map((r) => ({ session_id: r.session_id, size_bytes: r.size_bytes, mtime: r.mtime })))
     return { projects: env.db.getProjects(), diff, aborted: false }
+  })
+
+  // 轻量更新检测(启动 + "检查更新"按钮):只 stat 比对,不解析,返回变化计数与受影响项目。
+  bridge.handle('check:updates', () => detectChanges(getEnv().projectsRoot, getEnv().db.getAllSessionRows()))
+  // 单项目刷新:只重扫该项目文件夹并落库,返回最新项目列表与该项目的 diff。
+  bridge.handle('refresh:project', async (_ctx, projectPathAbs: string) => {
+    const env = getEnv()
+    const scan = await scanProject(env.projectsRoot, projectPathAbs)
+    const diff = applyProjectScan(env.db, projectPathAbs, scan)
+    return { project: scan.project, projects: env.db.getProjects(), diff }
   })
 
   bridge.handle('fs:list', (_ctx, path: string) => listDir(path || homedir()))

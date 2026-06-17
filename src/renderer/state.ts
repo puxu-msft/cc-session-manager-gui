@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import type { MovePreview, RefreshProgress, SourceInfo } from '@shared/types'
+import type { MovePreview, RefreshProgress, SourceInfo, UpdateSummary } from '@shared/types'
 import { reconcileSummary } from './lib/reconcileView'
 
 export function useAppState() {
@@ -16,6 +16,7 @@ export function useAppState() {
   const [sources, setSources] = useState<SourceInfo[]>([])
   const [activeSource, setActiveSource] = useState<string>('')
   const [reconcilePending, setReconcilePending] = useState(0)
+  const [updates, setUpdates] = useState<UpdateSummary | null>(null)
 
   const loadSources = useCallback(async () => {
     setSources(await window.api.listSources())
@@ -36,6 +37,7 @@ export function useAppState() {
     try {
       const r = await window.api.refresh()
       setProjects(r.projects)
+      setUpdates(null) // 全量刷新后清除更新提醒
       return r.diff
     } finally {
       off()
@@ -44,6 +46,16 @@ export function useAppState() {
     }
   }, [])
   const pickProject = useCallback(async (p: string) => { setSelectedProject(p); setSelectedSessions(new Set()); setSessions(await window.api.getSessions(p)) }, [])
+  // 轻量检查会话数据是否有更新(启动 + 手动按钮);结果驱动顶部提醒与项目 badge。
+  const checkUpdates = useCallback(async () => { const u = await window.api.checkUpdates(); setUpdates(u); return u }, [])
+  // 单项目刷新:只重扫该项目,刷新列表并清除其 badge;若正选中则同步会话列表。
+  const refreshProject = useCallback(async (p: string) => {
+    const r = await window.api.refreshProject(p)
+    setProjects(r.projects)
+    setUpdates((prev) => (prev ? { ...prev, changedProjects: prev.changedProjects.filter((x) => x !== p) } : prev))
+    if (selectedProject === p) setSessions(await window.api.getSessions(p))
+    return r.diff
+  }, [selectedProject])
   const browse = useCallback(async (p: string) => { const l = await window.api.listDir(p); setFsPath(l.path); setFsListing(l) }, [])
   const makeDir = useCallback(async (parent: string, name: string) => {
     const l = await window.api.makeDir(parent, name)
@@ -53,5 +65,5 @@ export function useAppState() {
     try { const p = await window.api.planHistory(); setReconcilePending(reconcileSummary(p).opsLines) } catch { setReconcilePending(0) }
   }, [])
 
-  return { projects, selectedProject, sessions, selectedSessions, setSelectedSessions, fsPath, fsListing, targetDir, setTargetDir, preview, setPreview, refreshing, progress, sources, activeSource, loadSources, switchSource, loadIndex, refresh, pickProject, browse, makeDir, reconcilePending, loadReconcilePending }
+  return { projects, selectedProject, sessions, selectedSessions, setSelectedSessions, fsPath, fsListing, targetDir, setTargetDir, preview, setPreview, refreshing, progress, sources, activeSource, loadSources, switchSource, loadIndex, refresh, pickProject, browse, makeDir, reconcilePending, loadReconcilePending, updates, checkUpdates, refreshProject }
 }

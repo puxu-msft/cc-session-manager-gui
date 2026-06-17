@@ -29,7 +29,7 @@ export function App() {
   const [showReconcile, setShowReconcile] = useState(false)
   const [showArchive, setShowArchive] = useState(false)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
-  useEffect(() => { st.loadSources(); st.loadIndex(); st.browse(''); st.loadReconcilePending() }, [])
+  useEffect(() => { st.loadSources(); st.loadIndex(); st.browse(''); st.loadReconcilePending(); st.checkUpdates() }, [])
 
   const toggle = (id: string) => {
     const next = new Set(st.selectedSessions)
@@ -93,11 +93,11 @@ export function App() {
         </div>
       )}
       <div className="cols">
-        <DirectoryPane projects={st.projects} selected={st.selectedProject} onPick={st.pickProject} />
+        <DirectoryPane projects={st.projects} selected={st.selectedProject} onPick={st.pickProject} changedProjects={st.updates?.changedProjects ?? []} onRefreshProject={st.refreshProject} />
         <SessionPane sessions={st.sessions} selected={st.selectedSessions} onToggle={toggle} onToggleAll={toggleAll} />
         <FsBrowserPane listing={st.fsListing} target={st.targetDir} onBrowse={st.browse} onPickTarget={st.setTargetDir} onMakeDir={st.makeDir} />
       </div>
-      <MoveBar count={st.selectedSessions.size} target={st.targetDir} refreshing={st.refreshing} progress={st.progress} onMove={startMove} onRefresh={st.refresh} onHistory={() => setShowHistory(true)} onReconcile={() => setShowReconcile(true)} reconcilePending={st.reconcilePending} onSnapshot={onSnapshot} onArchive={onArchive} onOpenArchive={() => setShowArchive(true)} />
+      <MoveBar count={st.selectedSessions.size} target={st.targetDir} refreshing={st.refreshing} progress={st.progress} onMove={startMove} onRefresh={st.refresh} onHistory={() => setShowHistory(true)} onReconcile={() => setShowReconcile(true)} reconcilePending={st.reconcilePending} onSnapshot={onSnapshot} onArchive={onArchive} onOpenArchive={() => setShowArchive(true)} updates={st.updates} onCheckUpdates={st.checkUpdates} selectedProject={st.selectedProject} onRefreshProject={st.refreshProject} />
       {actionMsg && <p className="notice" onClick={() => setActionMsg(null)}>{actionMsg}</p>}
       {st.preview && <ConfirmModal preview={st.preview} onCancel={() => st.setPreview(null)} onConfirm={confirmMove} />}
       {showHistory && <HistoryView onClose={() => setShowHistory(false)} />}

@@ -65,6 +65,9 @@ export interface FsListing { path: string; parent: string | null; entries: FsEnt
 // 刷新索引时的进度上报(主进程 → 渲染进程)
 export interface RefreshProgress { done: number; total: number; path: string }
 
+// 轻量更新检测结果(check:updates):会话数据相对索引的变化计数 + 受影响项目路径(供 UI 显示 badge)。
+export interface UpdateSummary { added: number; changed: number; removed: number; changedProjects: string[] }
+
 // 回收区占用:总字节 + 每条移动(以 moveId 为 key)的备份字节
 export interface TrashUsage { total: number; byMove: Record<string, number> }
 
