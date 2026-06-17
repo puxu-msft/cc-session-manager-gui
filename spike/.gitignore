@@ -1,0 +1,5 @@
+node_modules/
+electrobun-app/node_modules/
+electrobun-app/build/
+electrobun-app/dist/
+*.tmp
