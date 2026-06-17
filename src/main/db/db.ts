@@ -14,6 +14,7 @@ export function openDb(file: string) {
   db.exec(SCHEMA_SQL)
   const ver = db.prepare('SELECT schema_version FROM meta LIMIT 1').get() as any
   if (!ver) db.prepare('INSERT INTO meta (schema_version) VALUES (?)').run(SCHEMA_VERSION)
+  else if (ver.schema_version !== SCHEMA_VERSION) db.prepare('UPDATE meta SET schema_version=?').run(SCHEMA_VERSION)
   const now = () => new Date().toISOString()
 
   return {
