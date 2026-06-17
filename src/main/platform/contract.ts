@@ -17,3 +17,14 @@ export interface ScanRunner {
   run(input: ScanInput, onProgress: (done: number, total: number, path: string) => void): Promise<ScanOutcome>
   terminate(): void
 }
+
+// 主→渲染单向推送通道(绑定本次调用方);对应 spec §8 的 emitProgress。
+export interface BridgeContext {
+  emit(channel: string, payload: unknown): void
+}
+
+// IPC 桥接服务端。Electron=ipcMain.handle + sender.send;Electrobun=RPC defineRPC。
+// handler 签名 (ctx, ...args):ctx.emit 用于进度等单向推送,args 为渲染层调用参数。
+export interface BridgeServer {
+  handle(channel: string, handler: (ctx: BridgeContext, ...args: any[]) => unknown): void
+}
