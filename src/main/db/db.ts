@@ -16,6 +16,8 @@ export function openDb(file: string) {
   if (!ver) db.prepare('INSERT INTO meta (schema_version) VALUES (?)').run(SCHEMA_VERSION)
   else if (ver.schema_version !== SCHEMA_VERSION) db.prepare('UPDATE meta SET schema_version=?').run(SCHEMA_VERSION)
   const now = () => new Date().toISOString()
+  const mapVersion = (r: any) => ({ ...r, versionId: r.version_id, sessionId: r.session_id, projectPathAbs: r.project_path_abs, sourceFolder: r.source_folder, sourceCwd: r.source_cwd, jsonlSizeBytes: r.jsonl_size_bytes, sidecarBytes: r.sidecar_bytes, gzTotalBytes: r.gz_total_bytes, hasSidecar: !!r.has_sidecar, subagentCount: r.subagent_count, lineCount: r.line_count, archivedAt: r.archived_at })
+  const mapRestore = (r: any) => ({ ...r, versionId: r.version_id, sessionId: r.session_id, sourceCwd: r.source_cwd, targetDirAbs: r.target_dir_abs, targetFolder: r.target_folder, backupPath: r.backup_path, restoredAt: r.restored_at })
 
   return {
     raw: db,
@@ -92,6 +94,57 @@ export function openDb(file: string) {
         const sids = db.prepare('SELECT session_id FROM history_rewrite_sessions WHERE rewrite_id=?').all(row.id) as { session_id: string }[]
         return { ...row, session_ids: sids.map((s) => s.session_id) }
       })
+    },
+    insertArchiveVersion(v: {
+      sessionId: string; kind: 'snapshot' | 'archive'; projectPathAbs: string; sourceFolder: string
+      sourceCwd: string; title: string; jsonlSizeBytes: number; sidecarBytes: number; gzTotalBytes: number
+      hasSidecar: boolean; subagentCount: number; lineCount: number
+    }): number {
+      const r = db.prepare(`INSERT INTO archive_versions (session_id,kind,status,project_path_abs,source_folder,source_cwd,title,jsonl_size_bytes,sidecar_bytes,gz_total_bytes,has_sidecar,subagent_count,line_count,archived_at,note)
+        VALUES (@sessionId,@kind,'pending',@projectPathAbs,@sourceFolder,@sourceCwd,@title,@jsonlSizeBytes,@sidecarBytes,@gzTotalBytes,@hasSidecar,@subagentCount,@lineCount,@now,'')`)
+        .run({ ...v, hasSidecar: v.hasSidecar ? 1 : 0, now: now() })
+      return Number(r.lastInsertRowid)
+    },
+    setArchiveVersionStatus(versionId: number, status: 'pending' | 'complete') {
+      db.prepare('UPDATE archive_versions SET status=? WHERE version_id=?').run(status, versionId)
+    },
+    setArchiveVersionGzBytes(versionId: number, gzTotalBytes: number) {
+      db.prepare('UPDATE archive_versions SET gz_total_bytes=? WHERE version_id=?').run(gzTotalBytes, versionId)
+    },
+    deleteArchiveVersion(versionId: number) { db.prepare('DELETE FROM archive_versions WHERE version_id=?').run(versionId) },
+    getArchiveVersion(versionId: number): any {
+      const r = db.prepare('SELECT * FROM archive_versions WHERE version_id=?').get(versionId) as any
+      return r ? mapVersion(r) : null
+    },
+    getArchiveVersions(sessionId: string): any[] {
+      return (db.prepare('SELECT * FROM archive_versions WHERE session_id=? ORDER BY version_id DESC').all(sessionId) as any[]).map(mapVersion)
+    },
+    getAllArchiveVersions(): any[] {
+      return (db.prepare("SELECT * FROM archive_versions WHERE status='complete' ORDER BY version_id DESC").all() as any[]).map(mapVersion)
+    },
+    getPendingArchiveVersions(): any[] {
+      return (db.prepare("SELECT * FROM archive_versions WHERE status='pending'").all() as any[]).map(mapVersion)
+    },
+    insertRestore(r: { versionId: number; sessionId: string; sourceCwd: string; targetDirAbs: string; targetFolder: string }): number {
+      const row = db.prepare(`INSERT INTO restores (version_id,session_id,source_cwd,target_dir_abs,target_folder,backup_path,phase,status,restored_at)
+        VALUES (@versionId,@sessionId,@sourceCwd,@targetDirAbs,@targetFolder,'',NULL,'pending',@now)`).run({ ...r, now: now() })
+      return Number(row.lastInsertRowid)
+    },
+    setRestoreBackupPath(id: number, backupPath: string) {
+      db.prepare('UPDATE restores SET backup_path=? WHERE id=?').run(backupPath, id)
+    },
+    setRestorePhase(id: number, phase: 'staging_done' | 'backup_done' | 'commit_done') {
+      db.prepare('UPDATE restores SET phase=? WHERE id=?').run(phase, id)
+    },
+    setRestoreStatus(id: number, status: 'pending' | 'done' | 'failed' | 'undone') {
+      db.prepare('UPDATE restores SET status=? WHERE id=?').run(status, id)
+    },
+    getRestore(id: number): any {
+      const r = db.prepare('SELECT * FROM restores WHERE id=?').get(id) as any
+      return r ? mapRestore(r) : null
+    },
+    getPendingRestores(): any[] {
+      return (db.prepare("SELECT * FROM restores WHERE status='pending'").all() as any[]).map(mapRestore)
     },
     transaction<T>(fn: () => T): T { return db.transaction(fn)() },
     close() { db.close() },

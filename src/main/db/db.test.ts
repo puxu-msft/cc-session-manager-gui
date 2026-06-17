@@ -135,3 +135,37 @@ describe('db', () => {
     expect(all.map((r: any) => r.id)).toContain(id)
   })
 })
+
+describe('archive_versions / restores', () => {
+  it('插入 pending 版本→置 complete→按会话列出→取单条', () => {
+    const db = openDb(':memory:')
+    const vid = db.insertArchiveVersion({
+      sessionId: 's1', kind: 'snapshot', projectPathAbs: '/work/proj', sourceFolder: '-work-proj',
+      sourceCwd: '/work/proj', title: 'hello', jsonlSizeBytes: 10, sidecarBytes: 0, gzTotalBytes: 5,
+      hasSidecar: false, subagentCount: 0, lineCount: 2,
+    })
+    expect(vid).toBeGreaterThan(0)
+    expect(db.getArchiveVersions('s1')[0].status).toBe('pending')
+    db.setArchiveVersionStatus(vid, 'complete')
+    expect(db.getArchiveVersion(vid).status).toBe('complete')
+    expect(db.getArchiveVersion(vid).sessionId).toBe('s1')
+    db.setArchiveVersionGzBytes(vid, 4096)
+    expect(db.getArchiveVersion(vid).gzTotalBytes).toBe(4096)
+    expect(db.getPendingArchiveVersions()).toHaveLength(0)
+    db.deleteArchiveVersion(vid)
+    expect(db.getArchiveVersions('s1')).toHaveLength(0)
+  })
+
+  it('还原记录:插入→回填 backupPath→推进 phase→置 done→列 pending', () => {
+    const db = openDb(':memory:')
+    const rid = db.insertRestore({ versionId: 1, sessionId: 's1', sourceCwd: '/work/proj', targetDirAbs: '/work/proj', targetFolder: '-work-proj' })
+    db.setRestoreBackupPath(rid, `/b/${rid}-s1`)
+    expect(db.getRestore(rid).backupPath).toBe(`/b/${rid}-s1`)
+    expect(db.getPendingRestores()).toHaveLength(1)
+    db.setRestorePhase(rid, 'backup_done')
+    expect(db.getRestore(rid).phase).toBe('backup_done')
+    db.setRestoreStatus(rid, 'done')
+    expect(db.getPendingRestores()).toHaveLength(0)
+    expect(db.getRestore(rid).status).toBe('done')
+  })
+})
