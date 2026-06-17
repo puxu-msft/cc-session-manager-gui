@@ -193,3 +193,51 @@ export async function restoreVersion(versionId: number, env: ArchiverEnv): Promi
     return { status: 'failed', restoreId, error: String(e?.message ?? e) }
   }
 }
+
+// 撤销一次 done 还原:删目标当前内容 → 把 backupPath 现状整体搬回 → 置 undone
+export function undoRestore(restoreId: number, env: ArchiverEnv): void {
+  const r = env.db.getRestore(restoreId)
+  if (!r || r.status !== 'done') throw new Error('该还原不可撤销')
+  const targetFolder = r.targetFolder as string
+  const sessionId = r.sessionId as string
+  clearSessionEntries(targetFolder, sessionId)   // 删本次换入的内容(单点 helper,与 reconcile 一致)
+  // 搬回备份(整体镜像)
+  const bMain = join(r.backupPath, `${sessionId}.jsonl`)
+  const bSidecar = join(r.backupPath, sessionId)
+  if (existsSync(bMain)) safeRename(bMain, join(targetFolder, `${sessionId}.jsonl`))
+  if (existsSync(bSidecar)) safeRename(bSidecar, join(targetFolder, sessionId))
+  env.db.setRestoreStatus(restoreId, 'undone')
+}
+
+export function deleteVersion(versionId: number, env: ArchiverEnv): void {
+  const v = env.db.getArchiveVersion(versionId)
+  if (!v) return
+  try { rmSync(join(env.archiveRoot, v.sessionId, String(versionId)), { recursive: true, force: true }) } catch {}
+  env.db.deleteArchiveVersion(versionId)
+}
+
+export function listVersions(sessionId: string, env: ArchiverEnv): any[] {
+  return env.db.getArchiveVersions(sessionId).filter((v: any) => v.status === 'complete')
+}
+
+// 归档库 + 备份区总占用,以及每个版本目录占用(按 versionId)
+export function archiveUsage(env: ArchiverEnv): { total: number; backups: number; byVersion: Record<string, number> } {
+  const byVersion: Record<string, number> = {}
+  let total = 0, backups = 0
+  const sizeOf = (abs: string): number => {
+    if (!existsSync(abs)) return 0
+    const st = lstatSync(abs)
+    if (st.isSymbolicLink()) return 0          // 绝不跟随 symlink 统计外部目标
+    return st.isDirectory() ? readdirSync(abs).reduce((a, e) => a + sizeOf(join(abs, e)), 0) : st.size
+  }
+  if (existsSync(env.archiveRoot)) for (const sid of readdirSync(env.archiveRoot)) {
+    const sdir = join(env.archiveRoot, sid)
+    if (!lstatSync(sdir).isDirectory()) continue
+    for (const ver of readdirSync(sdir)) {
+      if (ver.startsWith('.')) continue
+      const s = sizeOf(join(sdir, ver)); byVersion[ver] = s; total += s
+    }
+  }
+  if (existsSync(env.backupsRoot)) backups = sizeOf(env.backupsRoot)
+  return { total, backups, byVersion }
+}

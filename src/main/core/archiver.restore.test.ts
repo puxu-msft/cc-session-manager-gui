@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { openDb } from '../db/db'
 import { encodePath } from './pathCodec'
 import { snapshotSession, restoreVersion } from './archiver'
+import { undoRestore, deleteVersion, archiveUsage, listVersions } from './archiver'
 
 function world() {
   const home = mkdtempSync(join(tmpdir(), 'arch3-'))
@@ -77,5 +78,41 @@ describe('restoreVersion', () => {
     const res = await restoreVersion(snap.versionId!, envOf(w, db))
     expect(res.status).toBe('skipped')
     expect(res.error).toMatch(/占用|碰撞/)
+  })
+})
+
+describe('undoRestore / deleteVersion / usage', () => {
+  it('撤销还原:目标恢复为还原前现状,无残留', async () => {
+    const w = world(); const db = openDb(':memory:')
+    const snap = await snapshotSession('s1', envOf(w, db))     // v1
+    writeFileSync(w.jsonl, 'v2 content\n')
+    mkdirSync(join(w.fdir, 's1'), { recursive: true }); writeFileSync(join(w.fdir, 's1', 'extra.txt'), 'cur')
+    const old = new Date(Date.now() - 600_000); utimesSync(w.jsonl, old, old)
+    const res = await restoreVersion(snap.versionId!, envOf(w, db))
+    undoRestore(res.restoreId!, envOf(w, db))
+    // 撤销后目标 = 还原前现状(v2 + extra.txt),v1 不再在原位
+    expect(readFileSync(w.jsonl, 'utf8')).toBe('v2 content\n')
+    expect(readFileSync(join(w.fdir, 's1', 'extra.txt'), 'utf8')).toBe('cur')
+    expect(db.getRestore(res.restoreId!).status).toBe('undone')
+  })
+
+  it('deleteVersion 删除版本目录与表行;usage 统计占用', async () => {
+    const w = world(); const db = openDb(':memory:')
+    const snap = await snapshotSession('s1', envOf(w, db))
+    expect(listVersions('s1', envOf(w, db))).toHaveLength(1)
+    expect(archiveUsage(envOf(w, db)).total).toBeGreaterThan(0)
+    deleteVersion(snap.versionId!, envOf(w, db))
+    expect(listVersions('s1', envOf(w, db))).toHaveLength(0)
+    expect(existsSync(join(w.archiveRoot, 's1', String(snap.versionId)))).toBe(false)
+  })
+
+  it('多版本:同会话两次快照产生两个独立 complete 版本', async () => {
+    const w = world(); const db = openDb(':memory:')
+    const v1 = await snapshotSession('s1', envOf(w, db))
+    const v2 = await snapshotSession('s1', envOf(w, db))
+    expect(v1.versionId).not.toBe(v2.versionId)
+    expect(listVersions('s1', envOf(w, db))).toHaveLength(2)
+    expect(existsSync(join(w.archiveRoot, 's1', String(v1.versionId)))).toBe(true)
+    expect(existsSync(join(w.archiveRoot, 's1', String(v2.versionId)))).toBe(true)
   })
 })
