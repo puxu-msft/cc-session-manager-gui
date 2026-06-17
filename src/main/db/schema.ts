@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (schema_version INTEGER);
 CREATE TABLE IF NOT EXISTS projects (
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS history_rewrite_sessions (rewrite_id INTEGER, session
 CREATE TABLE IF NOT EXISTS archive_versions (
   version_id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, kind TEXT, status TEXT,
   project_path_abs TEXT, source_folder TEXT, source_cwd TEXT, title TEXT,
-  jsonl_size_bytes INTEGER, sidecar_bytes INTEGER, gz_total_bytes INTEGER,
+  jsonl_size_bytes INTEGER, sidecar_bytes INTEGER, compressed_bytes INTEGER,
   has_sidecar INTEGER, subagent_count INTEGER, line_count INTEGER, archived_at TEXT, note TEXT);
 CREATE INDEX IF NOT EXISTS idx_archive_session ON archive_versions(session_id);
 CREATE TABLE IF NOT EXISTS restores (

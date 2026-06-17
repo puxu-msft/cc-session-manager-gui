@@ -53,7 +53,7 @@ async function buildVersion(sessionId: string, kind: 'snapshot' | 'archive', env
 
   const versionId = env.db.insertArchiveVersion({
     sessionId, kind, projectPathAbs: meta.cwd || '', sourceFolder: folderName, sourceCwd: meta.cwd || '',
-    title: meta.title, jsonlSizeBytes: st0.size, sidecarBytes, gzTotalBytes: 0,
+    title: meta.title, jsonlSizeBytes: st0.size, sidecarBytes, compressedBytes: 0,
     hasSidecar, subagentCount: meta.subagentCount, lineCount: meta.lineCount,
   })
 
@@ -75,8 +75,8 @@ async function buildVersion(sessionId: string, kind: 'snapshot' | 'archive', env
       rmSync(staging, { recursive: true, force: true }); env.db.deleteArchiveVersion(versionId)
       return { sessionId, status: 'skipped', error: '快照期间会话被写入,请稍后重试' }
     }
-    const gzBytes = statSync(zst).size
-    env.db.setArchiveVersionGzBytes(versionId, gzBytes)
+    const compressedBytes = statSync(zst).size
+    env.db.setArchiveVersionCompressedBytes(versionId, compressedBytes)
     renameSync(staging, finalDir)
     env.db.setArchiveVersionStatus(versionId, 'complete')
     return { sessionId, status: 'done', versionId }

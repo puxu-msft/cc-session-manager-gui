@@ -3,6 +3,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openDb } from './db'
+import Database from 'better-sqlite3'
 
 describe('db', () => {
   it('建表并支持 project/session upsert 与查询', () => {
@@ -141,7 +142,7 @@ describe('archive_versions / restores', () => {
     const db = openDb(':memory:')
     const vid = db.insertArchiveVersion({
       sessionId: 's1', kind: 'snapshot', projectPathAbs: '/work/proj', sourceFolder: '-work-proj',
-      sourceCwd: '/work/proj', title: 'hello', jsonlSizeBytes: 10, sidecarBytes: 0, gzTotalBytes: 5,
+      sourceCwd: '/work/proj', title: 'hello', jsonlSizeBytes: 10, sidecarBytes: 0, compressedBytes: 5,
       hasSidecar: false, subagentCount: 0, lineCount: 2,
     })
     expect(vid).toBeGreaterThan(0)
@@ -149,8 +150,8 @@ describe('archive_versions / restores', () => {
     db.setArchiveVersionStatus(vid, 'complete')
     expect(db.getArchiveVersion(vid).status).toBe('complete')
     expect(db.getArchiveVersion(vid).sessionId).toBe('s1')
-    db.setArchiveVersionGzBytes(vid, 4096)
-    expect(db.getArchiveVersion(vid).gzTotalBytes).toBe(4096)
+    db.setArchiveVersionCompressedBytes(vid, 4096)
+    expect(db.getArchiveVersion(vid).compressedBytes).toBe(4096)
     expect(db.getPendingArchiveVersions()).toHaveLength(0)
     db.deleteArchiveVersion(vid)
     expect(db.getArchiveVersions('s1')).toHaveLength(0)
@@ -167,5 +168,25 @@ describe('archive_versions / restores', () => {
     db.setRestoreStatus(rid, 'done')
     expect(db.getPendingRestores()).toHaveLength(0)
     expect(db.getRestore(rid).status).toBe('done')
+  })
+
+  it('schema v2→v3 迁移:archive_versions.gz_total_bytes 重命名为 compressed_bytes 且数据保留', () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'mig-')), 'old.db')
+    // 手建一个 v2 库:archive_versions 用旧列名 gz_total_bytes
+    const raw = new Database(file)
+    raw.exec('CREATE TABLE meta (schema_version INTEGER)')
+    raw.prepare('INSERT INTO meta (schema_version) VALUES (2)').run()
+    raw.exec('CREATE TABLE archive_versions (version_id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, gz_total_bytes INTEGER)')
+    raw.prepare('INSERT INTO archive_versions (session_id, gz_total_bytes) VALUES (?,?)').run('s1', 999)
+    raw.close()
+    // openDb 触发 v2→v3 迁移
+    const db = openDb(file)
+    const cols = (db.raw.prepare('PRAGMA table_info(archive_versions)').all() as { name: string }[]).map((c) => c.name)
+    expect(cols).toContain('compressed_bytes')
+    expect(cols).not.toContain('gz_total_bytes')
+    // 数据保留 + 版本号回写
+    expect((db.raw.prepare('SELECT compressed_bytes FROM archive_versions WHERE session_id=?').get('s1') as any).compressed_bytes).toBe(999)
+    expect((db.raw.prepare('SELECT schema_version FROM meta').get() as any).schema_version).toBe(3)
+    db.raw.close()
   })
 })

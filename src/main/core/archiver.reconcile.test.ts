@@ -20,7 +20,7 @@ const envOf = (w: any, db: any) => ({ projectsRoot: w.projects, archiveRoot: w.a
 describe('archiverReconcile', () => {
   it('清理 pending 版本及其 staging 目录', () => {
     const w = base(); const db = openDb(':memory:')
-    const vid = db.insertArchiveVersion({ sessionId: 's1', kind: 'snapshot', projectPathAbs: w.src, sourceFolder: encodePath(w.src), sourceCwd: w.src, title: 't', jsonlSizeBytes: 1, sidecarBytes: 0, gzTotalBytes: 0, hasSidecar: false, subagentCount: 0, lineCount: 1 })
+    const vid = db.insertArchiveVersion({ sessionId: 's1', kind: 'snapshot', projectPathAbs: w.src, sourceFolder: encodePath(w.src), sourceCwd: w.src, title: 't', jsonlSizeBytes: 1, sidecarBytes: 0, compressedBytes: 0, hasSidecar: false, subagentCount: 0, lineCount: 1 })
     const staging = join(w.archiveRoot, 's1', `.staging-${vid}`); mkdirSync(staging, { recursive: true })
     archiverReconcile(envOf(w, db))
     expect(db.getPendingArchiveVersions()).toHaveLength(0)

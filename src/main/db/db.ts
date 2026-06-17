@@ -8,15 +8,31 @@ export interface MoveInsert {
   targetDirAbs: string; targetFolder: string; trashPath: string; claudeJsonUpdated: boolean
 }
 
+function hasColumn(db: Database.Database, table: string, col: string): boolean {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === col)
+}
+
+// 既有库的增量 schema 迁移(新库由 SCHEMA_SQL 直接建成最新结构,既有库走这里逐版本演进)。
+function migrateSchema(db: Database.Database, fromVersion: number): void {
+  // v2 → v3:archive_versions.gz_total_bytes 重命名为 compressed_bytes
+  //（语义是版本包压缩后字节数,不绑定具体压缩算法——压缩后端已从 gzip 换为 zstd)
+  if (fromVersion < 3 && hasColumn(db, 'archive_versions', 'gz_total_bytes') && !hasColumn(db, 'archive_versions', 'compressed_bytes')) {
+    db.exec('ALTER TABLE archive_versions RENAME COLUMN gz_total_bytes TO compressed_bytes')
+  }
+}
+
 export function openDb(file: string) {
   const db = new Database(file)
   db.pragma('journal_mode = WAL')
   db.exec(SCHEMA_SQL)
   const ver = db.prepare('SELECT schema_version FROM meta LIMIT 1').get() as any
   if (!ver) db.prepare('INSERT INTO meta (schema_version) VALUES (?)').run(SCHEMA_VERSION)
-  else if (ver.schema_version !== SCHEMA_VERSION) db.prepare('UPDATE meta SET schema_version=?').run(SCHEMA_VERSION)
+  else if (ver.schema_version !== SCHEMA_VERSION) {
+    migrateSchema(db, ver.schema_version)
+    db.prepare('UPDATE meta SET schema_version=?').run(SCHEMA_VERSION)
+  }
   const now = () => new Date().toISOString()
-  const mapVersion = (r: any) => ({ ...r, versionId: r.version_id, sessionId: r.session_id, projectPathAbs: r.project_path_abs, sourceFolder: r.source_folder, sourceCwd: r.source_cwd, jsonlSizeBytes: r.jsonl_size_bytes, sidecarBytes: r.sidecar_bytes, gzTotalBytes: r.gz_total_bytes, hasSidecar: !!r.has_sidecar, subagentCount: r.subagent_count, lineCount: r.line_count, archivedAt: r.archived_at })
+  const mapVersion = (r: any) => ({ ...r, versionId: r.version_id, sessionId: r.session_id, projectPathAbs: r.project_path_abs, sourceFolder: r.source_folder, sourceCwd: r.source_cwd, jsonlSizeBytes: r.jsonl_size_bytes, sidecarBytes: r.sidecar_bytes, compressedBytes: r.compressed_bytes, hasSidecar: !!r.has_sidecar, subagentCount: r.subagent_count, lineCount: r.line_count, archivedAt: r.archived_at })
   const mapRestore = (r: any) => ({ ...r, versionId: r.version_id, sessionId: r.session_id, sourceCwd: r.source_cwd, targetDirAbs: r.target_dir_abs, targetFolder: r.target_folder, backupPath: r.backup_path, restoredAt: r.restored_at })
 
   return {
@@ -97,19 +113,19 @@ export function openDb(file: string) {
     },
     insertArchiveVersion(v: {
       sessionId: string; kind: 'snapshot' | 'archive'; projectPathAbs: string; sourceFolder: string
-      sourceCwd: string; title: string; jsonlSizeBytes: number; sidecarBytes: number; gzTotalBytes: number
+      sourceCwd: string; title: string; jsonlSizeBytes: number; sidecarBytes: number; compressedBytes: number
       hasSidecar: boolean; subagentCount: number; lineCount: number
     }): number {
-      const r = db.prepare(`INSERT INTO archive_versions (session_id,kind,status,project_path_abs,source_folder,source_cwd,title,jsonl_size_bytes,sidecar_bytes,gz_total_bytes,has_sidecar,subagent_count,line_count,archived_at,note)
-        VALUES (@sessionId,@kind,'pending',@projectPathAbs,@sourceFolder,@sourceCwd,@title,@jsonlSizeBytes,@sidecarBytes,@gzTotalBytes,@hasSidecar,@subagentCount,@lineCount,@now,'')`)
+      const r = db.prepare(`INSERT INTO archive_versions (session_id,kind,status,project_path_abs,source_folder,source_cwd,title,jsonl_size_bytes,sidecar_bytes,compressed_bytes,has_sidecar,subagent_count,line_count,archived_at,note)
+        VALUES (@sessionId,@kind,'pending',@projectPathAbs,@sourceFolder,@sourceCwd,@title,@jsonlSizeBytes,@sidecarBytes,@compressedBytes,@hasSidecar,@subagentCount,@lineCount,@now,'')`)
         .run({ ...v, hasSidecar: v.hasSidecar ? 1 : 0, now: now() })
       return Number(r.lastInsertRowid)
     },
     setArchiveVersionStatus(versionId: number, status: 'pending' | 'complete') {
       db.prepare('UPDATE archive_versions SET status=? WHERE version_id=?').run(status, versionId)
     },
-    setArchiveVersionGzBytes(versionId: number, gzTotalBytes: number) {
-      db.prepare('UPDATE archive_versions SET gz_total_bytes=? WHERE version_id=?').run(gzTotalBytes, versionId)
+    setArchiveVersionCompressedBytes(versionId: number, compressedBytes: number) {
+      db.prepare('UPDATE archive_versions SET compressed_bytes=? WHERE version_id=?').run(compressedBytes, versionId)
     },
     deleteArchiveVersion(versionId: number) { db.prepare('DELETE FROM archive_versions WHERE version_id=?').run(versionId) },
     getArchiveVersion(versionId: number): any {

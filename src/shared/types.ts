@@ -80,7 +80,7 @@ export interface ArchiveVersionInfo {
   title: string
   jsonlSizeBytes: number
   sidecarBytes: number
-  gzTotalBytes: number
+  compressedBytes: number
   subagentCount: number
   lineCount: number
   archivedAt: string

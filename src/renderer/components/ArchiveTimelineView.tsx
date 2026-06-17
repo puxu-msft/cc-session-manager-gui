@@ -60,7 +60,7 @@ export function ArchiveTimelineView({ onClose }: { onClose: () => void }) {
                 <td title={v.sessionId}>{v.sessionId.slice(0, 8)}</td>
                 <td>{v.kind === 'archive' ? '归档' : '快照'}</td>
                 <td title={v.sourceCwd}>{v.title}</td>
-                <td>{mb(v.gzTotalBytes)}</td>
+                <td>{mb(v.compressedBytes)}</td>
                 <td>{v.archivedAt?.slice(0, 19).replace('T', ' ')}</td>
                 <td className="hist-actions">
                   <button disabled={busy} onClick={() => onRestore(v.versionId)}>还原</button>

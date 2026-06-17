@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS archive_versions (
   -- 体积/计数(展示用;真正的还原校验以 manifest 为准):
   jsonl_size_bytes  INTEGER,
   sidecar_bytes     INTEGER,
-  gz_total_bytes    INTEGER,
+  compressed_bytes    INTEGER,
   has_sidecar       INTEGER,
   subagent_count    INTEGER,
   line_count        INTEGER,
@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS restores (
 **版本包结构** `<archiveRoot>/<sessionId>/<versionId>/`:
 
 - `content.tar.zst` — 整棵会话子树流式 tar + zstd 压缩(zstd-napi:level 19 + 多线程 + long-distance matching)。用 tar **不跟随 symlink**(`follow:false`):symlink 仅以「链接类型 + 目标字符串」入档,绝不解引用其内容。损坏行(NUL/截断)字节级原样入档。
-- `manifest.json` — 逐条目记录:相对路径、类型(`file` / `dir` / `symlink`)、原始字节数、内容 `sha256`(symlink 记目标字符串的 sha256);外加包级 `gz_sha256`。还原时据此逐条目校验。
+- `manifest.json` — 逐条目记录:相对路径、类型(`file` / `dir` / `symlink`)、原始字节数、内容 `sha256`(symlink 记目标字符串的 sha256)。这是权威完整性依据:归档删原件前、还原写回前,都把版本包解包到临时目录后据此逐条目核对。
 
 ## 6. 算法
 
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS restores (
 ### 6.2 归档(archive)
 
 1~5 同快照,但 `kind=archive`,且步骤 1 活跃则**直接拒绝**(不可逆操作不冒险)。
-6. **移除原件:** 版本 `complete`,且包文件完整性校验(`content.tar.zst` 存在、字节数与 `manifest` 的 `gz_sha256` 一致)通过后,删除 `projects/<source_folder>/<id>.jsonl` 与 `<id>/` 子树。
+6. **移除原件:** 版本 `complete` 后,**删原件前真正验证可还原**——把刚生成的版本包解包到临时目录,按 `manifest` 逐条目校验 sha256(symlink 重建后比对),通过才删除 `projects/<source_folder>/<id>.jsonl` 与 `<id>/` 子树;校验失败则保留原件、返回 failed。
 7. **更新索引:** 删/标记该 `sessions` 行(归档会话从活动列表消失;归属信息已冗余在 `archive_versions`,时间线不依赖该行存活)。
 
 > 任一步在「删除原件」之前失败:原件原样未动,版本要么 pending(被 reconcile 清)要么 complete(成了一个普通 archive 版本,无害)。删原件失败则返回 failed、保留原件;此时重试归档会再建一个新 archive 版本(不做版本去重,旧版本可手动删)。删原件已成功的会话重试时因原件不存在直接 skipped。
