@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { mkdirSync, existsSync, renameSync } from 'node:fs'
-import { openDb, type Db } from './db/db'
+import type { Db } from './db/db'
 import { detectSources, type Source } from './sources'
 import type { Paths } from './platform/contract'
 
@@ -12,6 +12,10 @@ const dbs = new Map<string, Db>()
 // 用户数据目录由运行时注入(Electron=app.getPath('userData');Electrobun 自拼),appState 不再直接依赖 electron。
 let injectedPaths: Paths | null = null
 export function setPaths(p: Paths): void { injectedPaths = p }
+
+// DB 创建由运行时注入(Electron=better-sqlite3;Electrobun=bun:sqlite),appState 不绑定具体驱动。
+let dbFactory: ((file: string) => Db) | null = null
+export function setDbFactory(f: (file: string) => Db): void { dbFactory = f }
 
 function userDataDir(): string {
   if (!injectedPaths) throw new Error('appState: paths 未初始化(应在启动时 setPaths)')
@@ -43,8 +47,9 @@ function activeSource(): Source {
 function dbFor(id: string): Db {
   let db = dbs.get(id)
   if (!db) {
+    if (!dbFactory) throw new Error('appState: dbFactory 未初始化(应在启动时 setDbFactory)')
     if (id === 'local') migrateLegacyLocalDb(userDataDir())
-    db = openDb(join(userDataDir(), `index-${id}.db`)); dbs.set(id, db)
+    db = dbFactory(join(userDataDir(), `index-${id}.db`)); dbs.set(id, db)
   }
   return db
 }

@@ -1,5 +1,5 @@
 import { registerIpc, abortCurrentScan } from '../ipc'
-import { setPaths, closeDb } from '../appState'
+import { setPaths, setDbFactory, closeDb } from '../appState'
 import type { Platform } from '../platform/contract'
 
 const APP_NAME = 'cc-move-session'
@@ -11,6 +11,7 @@ export function bootstrap(platform: Platform): void {
   platform.appHost.setName(APP_NAME)
   void platform.appHost.whenReady().then(() => {
     setPaths(platform.paths)
+    setDbFactory(platform.dbFactory)
     registerIpc(platform.bridge)
     platform.windowHost.createMainWindow()
   })

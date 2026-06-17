@@ -1,4 +1,5 @@
 import type { ProjectMeta, SessionMeta } from '@shared/types'
+import type { Db } from '../db/repository'
 
 // 运行时抽象契约。Electron 与(将来的)Electrobun 各自提供实现,核心装配只依赖这些接口。
 
@@ -49,6 +50,7 @@ export interface Platform {
   windowHost: WindowHost
   bridge: BridgeServer
   paths: Paths
+  dbFactory: (file: string) => Db
 }
 
 // 预编译语句的最小抽象:run/get/all 同时支持命名参数对象(run({a:1}))与位置参数(run(1,2))两种调用风格。
