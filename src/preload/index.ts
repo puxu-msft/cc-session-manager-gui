@@ -36,3 +36,7 @@ const api = {
 }
 contextBridge.exposeInMainWorld('api', api)
 export type Api = typeof api
+
+// window.api 的全局类型声明随 api 定义本身放在这里(api 的真相源),
+// 使 src/shared 不再反向依赖 preload;渲染层经全局声明取得类型。
+declare global { interface Window { api: Api } }

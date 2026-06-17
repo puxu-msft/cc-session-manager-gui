@@ -88,5 +88,3 @@ export interface ArchiveVersionInfo {
 export interface ArchiveActionResult { sessionId: string; status: 'done' | 'skipped' | 'failed'; versionId?: number; error?: string }
 export interface RestoreActionResult { status: 'done' | 'skipped' | 'failed'; restoreId?: number; error?: string }
 export interface ArchiveUsage { total: number; backups: number; byVersion: Record<string, number> }
-
-declare global { interface Window { api: import('../preload/index').Api } }
