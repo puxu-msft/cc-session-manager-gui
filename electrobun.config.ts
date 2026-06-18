@@ -14,14 +14,17 @@ const sharedAlias: BunPlugin = {
   },
 }
 
-// zstd-napi 是 Node 原生模块(binding.node),经 core/tarPack 被拉进 bun bundle 会在加载期崩溃。
-// 归档通道非本里程碑核心项,故在 bun(主进程)bundle 里把 zstd-napi 顶成占位实现(见 zstdStub.ts)。
+// zstd-napi 是 Node 原生模块(binding.node),经 core/tarPack 被拉进 bun bundle 会在加载期崩溃
+// (dev-guide §5.5)。Phase 3 实测 Bun 1.3.14 内置 node:zlib 的 zstd 流式 API(标准 zstd 格式,
+// 与 zstd-napi 跨运行时字节级互读已验证 GO),故把 bun bundle 里 zstd-napi 的解析目标换成
+// zstdShim.ts —— 它用 node:zlib 实现等价的流式 CompressStream/DecompressStream,使 archive 通道
+// 在 Electrobun 下真正可用,且与 Electron(zstd-napi)产物互读。core/tarPack.ts 零改动。
 // 仅作用于 bun 侧;渲染层不 import 它。
-const zstdStub: BunPlugin = {
-  name: 'zstd-napi-stub',
+const zstdShim: BunPlugin = {
+  name: 'zstd-napi-shim',
   setup(build) {
     build.onResolve({ filter: /^zstd-napi$/ }, () => ({
-      path: join(import.meta.dir, 'src', 'main', 'platform', 'electrobun', 'zstdStub.ts'),
+      path: join(import.meta.dir, 'src', 'main', 'platform', 'electrobun', 'zstdShim.ts'),
     }))
   },
 }
@@ -43,7 +46,7 @@ export default {
     bun: {
       // 入口 basename 必须为 index(launcher 硬编码加载 bun/index.js);装配逻辑在 src/bun/index.ts。
       entrypoint: 'src/bun/index.ts',
-      plugins: [sharedAlias, zstdStub],
+      plugins: [sharedAlias, zstdShim],
     },
     views: {
       mainview: {
