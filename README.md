@@ -11,29 +11,32 @@ Claude Code 把每个会话存为 `~/.claude/projects/<编码后的cwd>/<session
 ## 开发
 
 ```bash
-npm install              # 安装依赖;postinstall 会把原生模块按 Electron ABI 重建
-npm run dev              # 启动 Electron 应用(electron-vite dev)
-npm run build            # 生产构建(electron-vite build)
-npm test                 # 单元/集成测试(见下方"测试运行时")
-npm run test:coverage    # 带覆盖率运行
+npm install              # 安装依赖;postinstall 把原生模块按 Electron ABI 重建(Electron 兼容路径用)
+
+# 默认运行时:Bun + Electrobun(需 Bun;Linux 需 appindicator 依赖,见 docs/electrobun-dev-guide.md)
+npm run dev              # 启动应用(Electrobun:预构建扫描 worker + electrobun dev)
+npm run build            # 生产构建(Electrobun:Bun.build 打包 + 预构建扫描 worker)
+
+# 兼容运行时:Electron
+npm run dev:electron     # 启动 Electron(electron-vite dev)
+npm run build:electron   # Electron 生产构建(electron-vite build)
+npm run pack             # Electron 打包为未压缩应用目录(release/linux-unpacked)
+npm run dist             # Electron 打包为可分发安装包(AppImage)
 npm run e2e              # Electron 端到端冒烟(Playwright:验证 window.api/三栏/右栏加载)
-npm run pack             # 打包为未压缩应用目录(release/linux-unpacked)
-npm run dist             # 打包为可分发安装包(AppImage)
+
+# 测试与维护
+npm test                 # 单元/集成测试(Electron runner,见下方"测试运行时")
+npm run test:bun         # 核心逻辑在 Bun 运行时的回归(bun:sqlite / fs / 路径探针)
+npm run test:coverage    # 带覆盖率运行
 npm run rebuild          # 手动把原生模块重建为 Electron ABI
 ```
 
-### 双运行时(Electron / Bun-Electrobun)
+### 双运行时(默认 Electrobun / 兼容 Electron)
 
 核心逻辑(`src/main/core`、`src/main/db`、`src/renderer`)与装配(`src/main/app/bootstrap`、`src/main/platform/contract`)运行时无关,两套 platform 实现(`platform/electron`、`platform/electrobun`)经构建期分流并存:
 
-- **Electron**(上面的命令):主进程 Node + better-sqlite3 + 捆绑 Chromium。
-- **Bun + Electrobun**:主进程 Bun + bun:sqlite + 系统 WebView,包体更小、启动更快,归档压缩经 `node:zlib` zstd 与 Electron 的 `.zst` 互读。
-
-```bash
-bun run bun:dev          # Electrobun 开发启动(需 Bun;Linux 需 appindicator 依赖,见 docs/electrobun-dev-guide.md)
-bun run bun:build        # Electrobun 生产构建(Bun.build 打包 + 预构建扫描 worker)
-npm run test:bun         # 核心逻辑在 Bun 运行时的回归(bun:sqlite / fs / 路径探针)
-```
+- **Bun + Electrobun(默认,`npm run dev`/`build`)**:主进程 Bun + bun:sqlite + 系统 WebView,包体更小、启动更快,归档压缩经 `node:zlib` zstd 与 Electron 的 `.zst` 互读。
+- **Electron(兼容,`:electron` 后缀命令)**:主进程 Node + better-sqlite3 + 捆绑 Chromium;可随时作为回退,测试/e2e 仍跑此路径。
 
 实现细节、踩坑与打包分发清单见 `docs/electrobun-dev-guide.md`;架构设计与 1c/1d 决策见 `docs/superpowers/specs/2026-06-17-dual-runtime-electrobun-electron-design.md`。
 

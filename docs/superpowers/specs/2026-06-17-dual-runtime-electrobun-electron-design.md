@@ -204,7 +204,7 @@ src/
 
 ## 17. 实现状态与决策修正(2026-06-18 完成)
 
-双运行时已端到端落地,Electron 与 Electrobun **功能对等**。实测推翻/细化了若干设计假设(实测细节见 `docs/electrobun-dev-guide.md` §7-9):
+双运行时已端到端落地,Electron 与 Electrobun **功能对等**;**默认运行时已切 Electrobun**(`npm run dev`/`build` 走 Electrobun,Electron 经 `dev:electron`/`build:electron` 兼容,`e2e`/`pack`/`dist` 仍走 Electron)。注:§15 的包体/冷启动阈值未单独实测,按用户决定直接切默认,Electron 回退随时可用(改 `dev`/`build` 指回 electron-vite 即可)。实测推翻/细化了若干设计假设(实测细节见 `docs/electrobun-dev-guide.md` §7-9):
 
 - **Compressor 契约 → 不需要,改用 onResolve shim**:§7 曾设计 Compressor 抽象以应对 zstd-napi 在 Bun.build 不可用。实测发现 Bun 1.3.14 内置 `node:zlib` 的 `createZstdCompress/Decompress`(标准 zstd 格式),故 `electrobun.config` 用 onResolve 把 `zstd-napi` 顶成 `zstdShim`(node:zlib 实现),`core/tarPack.ts` **零改动**,两运行时共用同一压缩逻辑。跨运行时 .zst 互读字节级一致(§7 硬约束满足)。**Compressor 契约 YAGNI**。
 - **ScanRunner(Electrobun)**:worker 复用主 bundle 会连带起 electrobun RPC server 占 50000 端口冲突;改用独立预构建的自包含 worker bundle(`scripts/build-electrobun-worker.mjs` + `build.copy`)。
