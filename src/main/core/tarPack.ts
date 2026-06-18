@@ -54,7 +54,7 @@ const ZSTD_PARAMS = { compressionLevel: 19, enableLongDistanceMatching: true, nb
 // portable 去除 owner/mtime 噪声(只改 tar header,不改文件内容字节,故内容 sha256 恒等)。全程流式,绝不把大文件整体读入内存。
 export async function packTree(cwd: string, roots: string[], outZst: string): Promise<void> {
   await pipeline(
-    tar.create({ cwd, portable: true, follow: false, filter: (_p, st) => !st.isSymbolicLink() }, roots),
+    tar.create({ cwd, portable: true, follow: false, filter: (_p, st) => !(st as import('node:fs').Stats).isSymbolicLink() }, roots),
     new CompressStream(ZSTD_PARAMS),
     createWriteStream(outZst),
   )
