@@ -18,7 +18,8 @@
     "e2e": "npm run build && playwright test",
     "bun:build:worker": "bun run scripts/build-electrobun-worker.mjs",
     "bun:build": "bun run bun:build:worker && bunx electrobun build",
-    "bun:dev": "bun run bun:build:worker && bunx electrobun dev"
+    "bun:dev": "bun run bun:build:worker && bunx electrobun dev",
+    "test:bun": "bun run spike/probe-repository.ts && bun run spike/probe-sqlite.ts && bun run spike/probe-fsmove.ts && bun run spike/probe-paths.ts"
   },
   "build": {
     "appId": "com.local.cc-move-session",

@@ -1,6 +1,6 @@
 # cc-move-session
 
-把 Claude Code 会话从一个工作目录安全移动到另一个目录的桌面工具(Electron + React)。
+把 Claude Code 会话从一个工作目录安全移动到另一个目录的桌面工具(React;**双运行时**:Electron 与 Bun/Electrobun 并存,核心逻辑共用,构建期分流)。
 
 ## 它怎么工作
 
@@ -22,7 +22,22 @@ npm run dist             # 打包为可分发安装包(AppImage)
 npm run rebuild          # 手动把原生模块重建为 Electron ABI
 ```
 
-界面:左栏按路径聚合的项目(可过滤)、中栏会话(显式复选框、可过滤、可全选)、右栏完整目录浏览器(快捷根/路径输入/新建文件夹/`.`·`..` 导航)。底部刷新带进度;历史视图可撤销移动、查看回收区占用并手动清理。
+### 双运行时(Electron / Bun-Electrobun)
+
+核心逻辑(`src/main/core`、`src/main/db`、`src/renderer`)与装配(`src/main/app/bootstrap`、`src/main/platform/contract`)运行时无关,两套 platform 实现(`platform/electron`、`platform/electrobun`)经构建期分流并存:
+
+- **Electron**(上面的命令):主进程 Node + better-sqlite3 + 捆绑 Chromium。
+- **Bun + Electrobun**:主进程 Bun + bun:sqlite + 系统 WebView,包体更小、启动更快,归档压缩经 `node:zlib` zstd 与 Electron 的 `.zst` 互读。
+
+```bash
+bun run bun:dev          # Electrobun 开发启动(需 Bun;Linux 需 appindicator 依赖,见 docs/electrobun-dev-guide.md)
+bun run bun:build        # Electrobun 生产构建(Bun.build 打包 + 预构建扫描 worker)
+npm run test:bun         # 核心逻辑在 Bun 运行时的回归(bun:sqlite / fs / 路径探针)
+```
+
+实现细节、踩坑与打包分发清单见 `docs/electrobun-dev-guide.md`;架构设计与 1c/1d 决策见 `docs/superpowers/specs/2026-06-17-dual-runtime-electrobun-electron-design.md`。
+
+界面:左栏按路径聚合的项目(可过滤)、中栏会话(显式复选框、可过滤、可全选)、右栏完整目录浏览器(快捷根/路径输入/新建文件夹/`.`·`..` 导航)。底部刷新带进度与"检查更新"提醒、项目级单独刷新;历史视图可撤销移动、查看回收区占用并手动清理。
 
 ## 数据源(WSL)
 

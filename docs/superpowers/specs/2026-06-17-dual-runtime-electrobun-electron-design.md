@@ -201,3 +201,22 @@ src/
 - Electron 路径在所有阶段必须保持 green、可一键设回默认(改默认命令 + 文档),此路径须随时可用。
 - 触发回退(Electrobun 降级为兼容、Electron 升回默认)的条件:Phase 0 阻断项无 fallback 可解、或 Electrobun 在达成功能对等前出现不可绕过的关键缺陷。
 - 回退动作定义为:默认 `dev`/`build` 命令指回 electron-vite 链 + README 标注,不需要代码层回滚(因构建期分流,两套始终并存)。
+
+## 17. 实现状态与决策修正(2026-06-18 完成)
+
+双运行时已端到端落地,Electron 与 Electrobun **功能对等**。实测推翻/细化了若干设计假设(实测细节见 `docs/electrobun-dev-guide.md` §7-9):
+
+- **Compressor 契约 → 不需要,改用 onResolve shim**:§7 曾设计 Compressor 抽象以应对 zstd-napi 在 Bun.build 不可用。实测发现 Bun 1.3.14 内置 `node:zlib` 的 `createZstdCompress/Decompress`(标准 zstd 格式),故 `electrobun.config` 用 onResolve 把 `zstd-napi` 顶成 `zstdShim`(node:zlib 实现),`core/tarPack.ts` **零改动**,两运行时共用同一压缩逻辑。跨运行时 .zst 互读字节级一致(§7 硬约束满足)。**Compressor 契约 YAGNI**。
+- **ScanRunner(Electrobun)**:worker 复用主 bundle 会连带起 electrobun RPC server 占 50000 端口冲突;改用独立预构建的自包含 worker bundle(`scripts/build-electrobun-worker.mjs` + `build.copy`)。
+- **RPC 超时**:`Electroview.defineRPC` 默认请求超时仅 1000ms,长任务(refresh/archive)必超时;已设 60000ms。
+- **DB**:repository over driver 落地,bun:sqlite 与 better-sqlite3 行为等价已实证(`spike/probe-repository.ts`)。
+- **Electron 全程 green**:每步 136 单测 + e2e 3 + build 通过。
+
+### 1c / 1d 决策
+- **1c 目录迁移(src/main → src/core/platform/app):不执行**。当前 `src/main/{core,platform/electron,platform/electrobun,app,db}` 已实现 §6 的逻辑分离目标(core 运行时无关、platform 两套实现、app 装配、electron 耦合收敛 platform/electron);物理移到 `src/` 顶层是纯机械搬移(改全部相对 import + 4 处 `@shared` 别名 + 3 套 vite + tsconfig + electrobun.config),风险中、收益仅美观,按 YAGNI/KISS 保留当前结构。
+- **1d 测试迁 bun:test:轻量落地**。核心 db 测试保留 vitest(better-sqlite3 经 electron runner);bun:sqlite 侧由 `spike/probe-repository.ts` 等价回归覆盖(`bun run`/`npm run test:bun`)。全量迁 24 文件到 bun:test 价值边际(两 driver 已分别覆盖)、风险中,不做。
+
+### 已知剩余(非阻塞)
+- 既存 6 处 tsc 错误(测试文件未用 import + tarPack 的 tar 库类型),不影响运行/构建,建议后续顺手清。
+- Electrobun 打包分发需把 appindicator 依赖链 + `scanWorker.js` 纳入 CI(已记 dev-guide §8)。
+- WSLg 无法截图,electrobun 起窗证据为程序化(GTK 日志/WebKit 子进程/RPC 回传)。
