@@ -26,6 +26,10 @@
   "build": {
     "appId": "com.local.cc-move-session",
     "productName": "cc-move-session",
+    "publish": {
+      "provider": "github",
+      "releaseType": "draft"
+    },
     "directories": {
       "output": "release"
     },
@@ -42,6 +46,17 @@
         "AppImage"
       ],
       "category": "Utility"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "zip", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
     }
   },
   "license": "MIT",
