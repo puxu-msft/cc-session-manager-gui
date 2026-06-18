@@ -88,3 +88,61 @@ bun run spike/probe-paths.ts
 # Electrobun 最小应用(需先满足 §3 appindicator 前置)
 cd spike/electrobun-app && ./run-spike.sh   # 或 bunx electrobun build && 运行 build 产物 launcher
 ```
+
+## 7. Phase 3 实现结论(运行时对等)
+
+Phase 3 让 Electrobun 与 Electron 功能对等。三处关键解法与实测结论:
+
+### 7.1 zstd:用 Bun 内置 node:zlib(标准格式,与 zstd-napi 互读)— GO
+
+- 推翻 §5.5 的「需抽 Compressor 契约或 Bun.zstd*」担忧:Bun 1.3.14 内置 `node:zlib` 的 `createZstdCompress`/`createZstdDecompress`(Node 22.15+/23.8+ 的 zstd 流式),产出**标准 zstd 格式**。
+- `src/main/platform/electrobun/zstdShim.ts` 用它实现与 zstd-napi 兼容的 `CompressStream`(构造接受 `{compressionLevel, enableLongDistanceMatching, nbWorkers}`)/`DecompressStream`,均为 node:stream Transform,可直接进 `core/tarPack.ts` 的 pipeline。`core/tarPack.ts` 零改动,仅 `electrobun.config.ts` 的 onResolve 把 `zstd-napi` 顶成 zstdShim。
+- **跨运行时互读实测 GO(字节级一致、压缩产物等大)**:zstd-napi(Electron)压 → node:zlib(Electrobun)解 OK;反向 OK。
+- 实现要点:node:zlib 的 zstd 流自带正确背压,**不要手工桥接背压**(易死锁);用「构造函数返回底层流对象替换 this」的方式包装,零额外背压代码。
+
+### 7.2 扫描 worker:独立预构建 bundle(避免端口冲突)
+
+- electrobun build 只打包单一 `bun.entrypoint`,不产独立 worker chunk。
+- **self-referential worker(worker 复用主 bundle)实测 NO-GO**:worker 线程加载主 bundle 时会连带执行 electrobun 框架顶层副作用,在 **50000 端口起 RPC server**,与主进程 server 冲突(已用端口探针证实 worker 线程监听 50000)。
+- **解法(GO)**:`scripts/build-electrobun-worker.mjs` 用 `Bun.build` 把 `src/bun/scanWorker.ts` 预构建成**不含 electrobun** 的自包含 `scanWorker.js`(~7KB,0 处 server 代码),经 `electrobun.config.ts` 的 `build.copy` 拷到 `Resources/app/bun/scanWorker.js`(与 index.js 同目录);`ElectrobunScanRunner` 以 `import.meta.dir + 'scanWorker.js'` 定位加载。`bun:build`/`bun:dev` 已串上 `bun:build:worker` 预构建步骤。
+- 实测:独立 worker 完整扫真实 5.7GB/1338 jsonl,141 progress + done,13 projects/141 sessions,worker 不开 50000 端口。
+
+### 7.3 渲染端 RPC 超时:必须设 maxRequestTime
+
+- `Electroview.defineRPC` 的请求超时**默认仅 1000ms**,会让 `refresh:run`/`refresh:project`/`archive:*` 等长任务在 1s 后抛 `RPC request timed out`。
+- `src/renderer/main.electrobun.tsx` 已设 `maxRequestTime: 60000`,与 bun 侧 `BrowserView.defineRPC` 对齐。
+
+## 8. 打包 / 分发清单(Linux)
+
+Electrobun build 产物结构:`build/<channel>-linux-x64/<app>/`,内含 `bin/`(launcher + bun + libNativeWrapper.so + libasar.so)、`lib/`、`Resources/app/`(bun/index.js + bun/scanWorker.js + views/)。
+
+分发到用户端必须保证以下运行环境,否则起窗即失败:
+
+1. **appindicator 依赖链(§3 的硬前置,起窗必需)** —— `libNativeWrapper.so` 硬链系统托盘库。用户端需安装或随包附带:
+   - `libayatana-appindicator3.so.1`(及 `.1.0.0`)
+   - `libayatana-indicator3.so.7`、`libayatana-ido3-0.4.so.0`
+   - `libdbusmenu-glib.so.4`、`libdbusmenu-gtk3.so.4`
+   - `libappindicator3.so.1`
+   - 开发机:`sudo apt install libayatana-appindicator3-1`(自动拉齐依赖);无 root:`apt-get download` + `dpkg-deb -x` 解包到本地池 + `LD_LIBRARY_PATH` 注入(见 `spike/electrobun-app/run-spike.sh`)。
+2. **webkit2gtk-4.1 + gtk-3 运行库** —— 本环境已装齐;最小镜像需补 `libwebkit2gtk-4.1-0`。
+3. **scanWorker.js 必须随产物分发** —— 由 `bun:build:worker` 预构建并 copy 进 `Resources/app/bun/`,否则刷新功能(worker 扫描)在用户端不可用。CI 须在 `electrobun build` 前先跑 `bun run bun:build:worker`(`npm run bun:build` 已包含此顺序)。
+4. **CI 打包顺序**:`npm run bun:build`(= `bun:build:worker` → `bunx electrobun build`)。CI 运行环境清单须纳入上述 appindicator + webkit2gtk 依赖链。
+
+## 9. 实测起窗与全链路验证复跑
+
+```bash
+# 1. 构建(含 worker 预构建)
+npm run bun:build
+
+# 2. 清理可能残留的旧 bun 子进程(它们会占 50000 端口导致新实例 RPC 失败)
+ps -ef | grep -E 'Resources/main.js|bin/launcher' | grep -v grep | awk '{print $2}' | xargs -r kill -9
+
+# 3. 注入 appindicator 库池起窗(无目视,看 VIEW PROBE 回传)
+BINDIR="$(pwd)/build/dev-linux-x64/cc-move-session-dev/bin"
+setsid bash -c "LD_LIBRARY_PATH='/tmp/appind/libpool:$BINDIR' exec '$BINDIR/launcher'" > /tmp/eb.log 2>&1 < /dev/null &
+sleep 50 && grep 'VIEW PROBE received' /tmp/eb.log
+```
+
+判据(程序化,WSLg 无法截图):日志含 `GTK EVENT LOOP STARTED`、spawn 出 `WebKitWeb/NetworkProcess` 子进程、`VIEW PROBE received: {ok:true, ...}`。Phase 3 实测全链路回传:`sourcesCount=2 | index.projects=14 | checkUpdates ... | refreshProject:ok | archive:snapshot status=done`(archive 经 zstd shim 真压缩真实 jsonl)。
+
+**坑**:残留的旧 bun 子进程(`Resources/main.js`,parented 到非 launcher 的 PID)只杀 launcher 杀不掉,会一直占 50000 端口,导致新实例 RPC server 起不来、渲染连不上、VIEW PROBE 不回传。每次起窗前务必按上面第 2 步清干净。
