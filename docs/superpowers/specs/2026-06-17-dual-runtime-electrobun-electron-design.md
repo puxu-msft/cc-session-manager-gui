@@ -140,7 +140,7 @@ src/
 - 默认 Electrobun:`bun dev` / `bun run build`,经 electrobun CLI;**renderer 用 `Bun.build` 打包,不复用 vite**——React 19 + 现有 vite 插件链(别名/CSS/资源)迁到 Bun bundler 的等价性须 Phase 0 验证。静态资源经 electrobun config `build.copy` 映射,运行时 `views://` 引用。
 - 兼容 Electron:`npm run dev:electron` / `npm run build:electron`,沿用 electron-vite + electron-builder。
 - 模块解析:两套 entry 静态 import 各自 platform;打包标记对端运行时模块为 external。
-- **包管理双轨**:Electrobun 侧用 `bun install`、Electron 侧 native(better-sqlite3/zstd-napi)依赖 `npm`/electron-builder 的 ABI 处理;明确各自包管理器,避免交叉污染 node_modules / lockfile 双写摩擦。
+- **包管理统一 bun(实测 2026-06-18,推翻原"双轨"设计)**:`bun install` 跑 root postinstall 触发 `electron-builder install-app-deps`,正确把 better-sqlite3/zstd-napi 重建为 Electron ABI(buildFromSource=false 复用 prebuilt);安装后 Electron(test 136 + build + e2e 3)与 Bun(test:bun)两路径全绿。故包管理**统一 `bun install`**,`bun.lock` 为单一锁真相源,`package-lock.json` 移除;`npm install` 仍可作兼容(重新解析 + 同一 postinstall)。原"各自包管理器、避免交叉"的双轨假设不成立。
 - 测试矩阵:`bun test`(核心)+ electron runner(兼容)。
 - **Linux 运行前置**:Electrobun 需系统 appindicator 托盘库链(`libayatana-appindicator3-1` 等),纳入开发/打包/CI 环境清单(详见 `docs/superpowers/spike-results/2026-06-17-phase0.md`)。
 - **Electrobun 真实 API**(Phase 0 实测,供 Phase 1–3 依据):RPC 用 `BrowserView.defineRPC({bun, webview})`、渲染侧命名导入 `import { Electroview } from 'electrobun/view'`、CLI 用 `electrobun dev`/`build`(无 `launch`)、config 用 `build.bun.entrypoint`+`build.views.<name>.entrypoint`+`build.copy`+`bundleCEF`。
@@ -172,7 +172,7 @@ src/
 | window.api 无 preload 注入 | bridge 渲染侧实现机制不同 | renderer 内 Electroview adapter 包装成同形 api;契约层写明不对称 |
 | userData 无 API、落点分裂 | 两运行时用户数据割裂 | Paths 硬约束 + 路径相等断言 |
 | **双运行时长期维护/认知负担** | 每个新功能成本近翻倍 | 严格限定"两套"只到 §5.2 七项 + Compressor;防漂移 import 边界 CI 检查 |
-| 包管理/lockfile 双轨 | native 安装摩擦 | §11 明确各自包管理器 |
+| 包管理/lockfile 双轨 | (已解决,实测 2026-06-18) | `bun install` 统一处理 Electron ABI native(经 electron-builder postinstall),单一 `bun.lock`,双轨摩擦消除 |
 | **Electrobun 弃坑/beta 关键 bug** | 默认运行时不可靠 | §16 回滚:Electron 随时可设回默认 |
 | Electrobun 版本定位 | — | 实为 1.18.x 发行版(保留 beta 通道),API 较稳但 Linux/WSL 实战样本少 |
 | RPC 表达力 | (已证实成立,降级) | `defineRPC` 四向 + 结构化 payload 原生支持;仅需核 `maxRequestTime` 对长通道 |
@@ -210,6 +210,7 @@ src/
 - **ScanRunner(Electrobun)**:worker 复用主 bundle 会连带起 electrobun RPC server 占 50000 端口冲突;改用独立预构建的自包含 worker bundle(`scripts/build-electrobun-worker.mjs` + `build.copy`)。
 - **RPC 超时**:`Electroview.defineRPC` 默认请求超时仅 1000ms,长任务(refresh/archive)必超时;已设 60000ms。
 - **DB**:repository over driver 落地,bun:sqlite 与 better-sqlite3 行为等价已实证(`spike/probe-repository.ts`)。
+- **包管理统一 bun**:实测 `bun install` 跑 electron-builder postinstall 正确重建 better-sqlite3/zstd-napi 为 Electron ABI,两路径全绿;`bun.lock` 为单一锁真相源,`package-lock.json` 移除(推翻 §11 原双轨假设)。
 - **Electron 全程 green**:每步 136 单测 + e2e 3 + build 通过。
 
 ### 1c / 1d 决策
