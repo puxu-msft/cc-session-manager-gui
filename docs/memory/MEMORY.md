@@ -10,3 +10,4 @@
 - [WSL Electron 不弹窗坑](wsl-electron-run-as-node-leak.md) — `ELECTRON_RUN_AS_NODE` 经 WSLENV 从 Windows 泄漏致 GUI 不启动,须清空(设 `0` 无效)
 - [原生模块 ABI 必须匹配测试运行时](native-module-abi-test-runtime.md) — `NODE_MODULE_VERSION` 不匹配是 ABI 问题非代码回归,按测试运行时 rebuild,别在两套 ABI 间横跳
 - [Electron preload 需 .cjs](electron-preload-cjs-under-type-module.md) — type:module 下 preload 输出 .js 致 window.api 全 undefined;含 headless 桥接验证探针
+- [WSL Electron 崩溃无 core 也能查](wsl-electron-crash-forensics-without-core.md) — coredump 被删时从 dmesg 寄存器 dump 复原指纹;ip==fault==小地址=野/空 vtable 虚调用;WSL core 路由到 Windows 侧;dmesg 时间戳会漂别用来换算
