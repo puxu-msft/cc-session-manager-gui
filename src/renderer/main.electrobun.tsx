@@ -19,6 +19,10 @@ const progressListeners = new Set<ProgressCb>()
 
 const ev = new Electroview({
   rpc: Electroview.defineRPC({
+    // 渲染端 RPC 请求超时。Electroview 默认仅 1000ms,远不足以覆盖 refresh:run(全量扫描)、
+    // refresh:project(单项目重扫)与 archive:*(压缩真实 jsonl)等长任务 —— 默认值会让这些请求
+    // 在 1s 后抛 "RPC request timed out"。与 bun 侧 BrowserView.defineRPC 的 maxRequestTime 对齐为 60s。
+    maxRequestTime: 60000,
     handlers: {
       requests: {},
       messages: {
