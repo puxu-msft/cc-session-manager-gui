@@ -56,6 +56,9 @@ export default {
     },
     copy: {
       'src/renderer/index.electrobun.html': 'views/mainview/index.html',
+      // 独立扫描 worker bundle(scripts/build-electrobun-worker.mjs 预构建产物,不含 electrobun)。
+      // 拷到 Resources/app/bun/scanWorker.js,ElectrobunScanRunner 以 import.meta.dir + 'scanWorker.js' 定位。
+      'build-worker/scanWorker.js': 'bun/scanWorker.js',
     },
     mac: { bundleCEF: false },
     linux: { bundleCEF: false },

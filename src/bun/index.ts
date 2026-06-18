@@ -15,7 +15,8 @@ import { BunSqliteDriver } from '../main/platform/electrobun/sqliteDriver'
 //
 // 与 Electron 入口(src/main/index.ts)同样调用通用 bootstrap,共享全部核心逻辑/IPC/渲染层:
 //   - dbFactory:bun:sqlite 驱动包进共享 createRepository(Phase 0 spike 验证等价 better-sqlite3)。
-//   - scanRunner:进程内异步实现(electrobun 打包不便定位独立 worker 入口,见 scanRunner.ts 注释)。
+//   - scanRunner:node:worker_threads 实现,worker 入口为独立打包的 bun/scanWorker.js
+//     (不含 electrobun,避免端口冲突;见 scanRunner.ts / scripts/build-electrobun-worker.mjs)。
 //   - windowHost 需 bridge 引用(创建窗口时取 bridge.buildRPC() 并 attachWindow)。
 const bridge = new ElectrobunBridge()
 

@@ -3,6 +3,7 @@ dist/
 out/
 release/
 build/
+build-worker/
 .vite/
 coverage/
 *.log

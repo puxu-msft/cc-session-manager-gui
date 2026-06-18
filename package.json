@@ -16,8 +16,9 @@
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
     "e2e": "npm run build && playwright test",
-    "bun:build": "bunx electrobun build",
-    "bun:dev": "bunx electrobun dev"
+    "bun:build:worker": "bun run scripts/build-electrobun-worker.mjs",
+    "bun:build": "bun run bun:build:worker && bunx electrobun build",
+    "bun:dev": "bun run bun:build:worker && bunx electrobun dev"
   },
   "build": {
     "appId": "com.local.cc-move-session",
