@@ -11,7 +11,7 @@ Claude Code 把每个会话存为 `~/.claude/projects/<编码后的cwd>/<session
 ## 开发
 
 ```bash
-npm install              # 安装依赖;postinstall 把原生模块按 Electron ABI 重建(Electron 兼容路径用)
+bun install              # 安装依赖(推荐;已实测正确触发 electron-builder 把 better-sqlite3 重建为 Electron ABI,bun.lock 为锁文件真相源)
 
 # 默认运行时:Bun + Electrobun(需 Bun;Linux 需 appindicator 依赖,见 docs/electrobun-dev-guide.md)
 npm run dev              # 启动应用(Electrobun:预构建扫描 worker + electrobun dev)
