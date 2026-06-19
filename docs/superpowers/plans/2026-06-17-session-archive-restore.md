@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在 cc-move-session 上增加会话「快照 / 归档 / 还原」能力——把会话整棵子树字节级打包进独立归档库,支持多版本时间线与任意版本原位还原。
+**Goal:** 在 cc-session-manager-gui(原 cc-move-session)上增加会话「快照 / 归档 / 还原」能力——把会话整棵子树字节级打包进独立归档库,支持多版本时间线与任意版本原位还原。
 
 **Architecture:** 独立的第四类存储,完全不复用回收区或 mover。归档库 `.cc-move-archive/<sessionId>/<versionId>/` 存 `content.tar.gz` + `manifest.json`(逐文件 sha256);还原前把现状整体搬入 `.cc-move-backups/<restoreId>-<sessionId>/`。所有破坏性步骤走「staging → 校验 → 原子提交 → pending+reconcile」纪律,崩溃 reconcile 接入启动与切源。
 

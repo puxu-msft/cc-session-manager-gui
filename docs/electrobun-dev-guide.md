@@ -138,7 +138,7 @@ npm run bun:build
 ps -ef | grep -E 'Resources/main.js|bin/launcher' | grep -v grep | awk '{print $2}' | xargs -r kill -9
 
 # 3. 注入 appindicator 库池起窗(无目视,看 VIEW PROBE 回传)
-BINDIR="$(pwd)/build/dev-linux-x64/cc-move-session-dev/bin"
+BINDIR="$(pwd)/build/dev-linux-x64/cc-session-manager-gui-dev/bin"
 setsid bash -c "LD_LIBRARY_PATH='/tmp/appind/libpool:$BINDIR' exec '$BINDIR/launcher'" > /tmp/eb.log 2>&1 < /dev/null &
 sleep 50 && grep 'VIEW PROBE received' /tmp/eb.log
 ```

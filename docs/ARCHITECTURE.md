@@ -39,11 +39,12 @@
 ### 主进程编排层 `src/main/`(运行时无关胶水,薄)
 
 - `ipc.ts` — **IPC 契约服务端**:`registerIpc(bridge: BridgeServer, runner?: ScanRunner)`,全部通道经注入的 `bridge.handle('<channel>', (ctx, …args) => …)` 注册(不依赖 electron);进度经 `ctx.emit('refresh:progress', …)`;`scanRunner` 可注入(默认 `ElectronScanRunner`);启动即 `reconcile`/`archiverReconcile` 收尾 pending。通道含 sources/index/sessions、`refresh:run`、`refresh:project`(单项目刷新)、`check:updates`(会话数据更新检测)、move/trash/history/archive 各操作。
-- `appState.ts` — 多源运行环境:`getEnv()` 返回当前活动源的 `Env`(独立 `Db` + 该源 projects/claude.json/trash/archive/backups 路径);每源一套 `index-<id>.db`;userData 路径经注入的 `Paths`(`setPaths`)、DB 创建经注入的 `dbFactory`(`setDbFactory`),**不再直接依赖 electron 或 better-sqlite3**;含旧单库 `index.db → index-local.db` 一次性迁移。
+- `appState.ts` — 多源运行环境:`getEnv()` 返回当前活动源的 `Env`(独立 `Db` + 该源 projects/claude.json/trash/archive/backups 路径);每源一套 `index-<id>.db`;userData 路径经注入的 `Paths`(`setPaths`)、DB 创建经注入的 `dbFactory`(`setDbFactory`),**不再直接依赖 electron 或 better-sqlite3**;含旧单库 `index.db → index-local.db` 与项目改名(见 `migrateRename.ts`)两类一次性迁移。
 - `sources.ts` — 数据源探测:一个源=一套某家目录下的 `.claude`;WSL 下探测 Linux 侧 + Windows 侧(经 `cmd.exe` 取 `%USERPROFILE%`,失败则扫 `/mnt/c/Users`)两套,各自独立。
 - `refresh.ts` — `applyScanToIndex(db, scan, existing)`:刷新落库的**纯函数**(算 diff → 事务内 upsert/删除),供 IPC 与集成测试共用(逻辑与 UI 分离的范例)。
 - `scanWorker.ts` — Electron 的 `worker_threads` 扫描线程入口(由 `ElectronScanRunner` 拉起);Electrobun 用独立预构建的 `src/bun/scanWorker.ts`。
 - `trash.ts` — 回收区占用统计与单条/全部清理。
+- `migrateRename.ts` — 项目改名(cc-move-session → cc-session-manager-gui)的一次性数据迁移:把旧 app 名 userData 里的 `index-*.db`、以及 `~/.claude/.cc-move-{trash,archive,backups}` 目录搬到新名,并重写库中存储的绝对 `backup_path`/`trash_path` 前缀(undoRestore 读 backup_path;trash/archive 路径由当前 root 派生,故主要靠目录 rename)。由 `appState.dbFor` 启动时按源幂等调用。
 
 ### 核心业务逻辑 `src/main/core/`(纯函数,不依赖 Electron/IPC,独立单测)
 
@@ -107,4 +108,4 @@ schema v3,9 张表:`projects` / `sessions`(索引镜像;真相永远是磁盘 js
 
 ---
 
-> 基准:HEAD `92bbf0c`(v1.0.0,2026-06-19,双运行时已落地)。
+> 基准:v1.0.0 双运行时已落地 + 改名 `cc-session-manager-gui`(原 `cc-move-session`,2026-06-19,含数据迁移)。

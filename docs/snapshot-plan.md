@@ -1,12 +1,12 @@
 # 快照工具 最终方案(v3)
 
 ## 一句话定位
-一个**独立的 Node/TS CLI**:对任意目录(首要对象 `~/.claude`,也能给 cc-move-session 自身用)做「分类别 restic 去重增量快照 + 可选 zstd 全量包」,声明式配置,不做加密/不做敏感数据处理(用户已明确放弃)。
+一个**独立的 Node/TS CLI**:对任意目录(首要对象 `~/.claude`,也能给 cc-session-manager-gui 自身用)做「分类别 restic 去重增量快照 + 可选 zstd 全量包」,声明式配置,不做加密/不做敏感数据处理(用户已明确放弃)。
 
 ## 决策依据(已敲定)
 - **引擎:restic**(用户拍板)。去重(CDC,等效无限窗口跨文件/跨快照)、增量、保留策略、内建 zstd 压缩一站搞定。
 - **不加密、不处理敏感数据**:砍掉 age / gitleaks / 字段掩码 / 双轨。restic 内部强制加密无法关闭,故用 `restic init --insecure-no-password` → **零口令、零密钥管理**,内部加密对用户透明,不构成负担。
-- **独立形态**:自带 `package.json` 的小型 CLI 包,不依赖 Electron;日后可被 cc-move-session `import` 复用,也能反过来快照该项目。
+- **独立形态**:自带 `package.json` 的小型 CLI 包,不依赖 Electron;日后可被 cc-session-manager-gui `import` 复用,也能反过来快照该项目。
 - **压缩参数(实测结论)**:对会话 JSONL 这类长距离跨文件冗余,**zstd + 大窗口** 是最优,比率反超 xz 且解压快约 7×。
   - 564MB 真实样本:zstd-19 无long 60×;`--long=27` 71×;`--long=31` 73×;`-22 --ultra --long=31` **84×**;xz-9e 仅 71×。
   - restic 仓库:靠**去重 + `--compression max`**,跨文件冗余由去重解决,无需 `--long`。
@@ -77,7 +77,7 @@ claude-snapshot prune     # forget --prune + portable keep-last-N
 6. README + 用法。
 
 ## 未来扩展
-- 被 cc-move-session `import` 复用(已是独立包,直接依赖)。
+- 被 cc-session-manager-gui `import` 复用(已是独立包,直接依赖)。
 - restic 后端扩展(SFTP/S3/rclone)异地。
 - React UI:选源/类别 → 预览 → 快照 → 历史 → 还原。
 - 若日后要安全:restic 加口令即恢复加密,gitleaks 作可选 hook。

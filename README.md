@@ -1,6 +1,6 @@
-# cc-move-session
+# cc-session-manager-gui
 
-把 Claude Code 会话从一个工作目录安全移动到另一个目录的桌面工具(React;**双运行时**:Electron 与 Bun/Electrobun 并存,核心逻辑共用,构建期分流)。
+管理 Claude Code 会话的桌面工具:在工作目录间安全**移动**,以及**快照 / 归档 / 还原**(React;**双运行时**:Electron 与 Bun/Electrobun 并存,核心逻辑共用,构建期分流)。
 
 ## 它怎么工作
 
@@ -65,11 +65,11 @@ WSL 注意:若从 Windows 经 `WSLENV` 泄漏了 `ELECTRON_RUN_AS_NODE=1`,会让
 
 ## 回收区 / 撤销
 
-每次移动都会把原件 `rename` 到回收区 `~/.claude/.cc-move-trash/<moveId>/`,不做破坏性删除。回收区**默认不自动 GC**,无限期保留;可在"历史"视图里查看每次移动与总计的磁盘占用,手动**撤销**(把原件搬回源、清理目标、移除 `.claude.json` 新增条目)或手动清理。崩溃后重启会对处于 pending 状态的移动做 reconcile,判定补记 done 或回滚为 failed。
+每次移动都会把原件 `rename` 到回收区 `~/.claude/.cc-session-manager-trash/<moveId>/`,不做破坏性删除。回收区**默认不自动 GC**,无限期保留;可在"历史"视图里查看每次移动与总计的磁盘占用,手动**撤销**(把原件搬回源、清理目标、移除 `.claude.json` 新增条目)或手动清理。崩溃后重启会对处于 pending 状态的移动做 reconcile,判定补记 done 或回滚为 failed。
 
 ## 归档 / 还原
 
-除移动外,可对会话做**快照**(留原件的备份版本)或**归档**(移除原件、收进归档库),同一会话形成多版本时间线;任意版本可**还原**到原位置——还原前会把现状整体搬入 `.cc-move-backups/<restoreId>-<sessionId>/` 作为安全网,可撤销。归档库 `.cc-move-archive/` 与备份区均无限期保留、可在「归档时间线」视图查看占用并手动清理。
+除移动外,可对会话做**快照**(留原件的备份版本)或**归档**(移除原件、收进归档库),同一会话形成多版本时间线;任意版本可**还原**到原位置——还原前会把现状整体搬入 `.cc-session-manager-backups/<restoreId>-<sessionId>/` 作为安全网,可撤销。归档库 `.cc-session-manager-archive/` 与备份区均无限期保留、可在「归档时间线」视图查看占用并手动清理。
 
 ## 文档
 

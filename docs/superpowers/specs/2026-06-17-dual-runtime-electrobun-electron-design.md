@@ -2,7 +2,7 @@
 
 - 状态:草案 v2(已经过一轮三方对抗审查迭代)
 - 日期:2026-06-17
-- 适用项目:cc-move-session
+- 适用项目:cc-session-manager-gui(原 cc-move-session)
 - 变更要点(相对 v1):新增 zstd-napi 适配面与 Phase 0 探针;更正打包链(Bun.build 而非 vite)、window.api 注入模型(无 preload)、userData 路径(无 API、须自拼对齐);更正 core/ 非"运行时无关"的定性;handler 签名引入进度发射器;新增成功标准与回滚条款。
 
 ## 1. 背景与目标

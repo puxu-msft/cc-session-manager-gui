@@ -1,4 +1,4 @@
-# cc-move-session — 项目协作指南
+# cc-session-manager-gui — 项目协作指南
 
 把 Claude Code 会话在不同工作目录间安全移动/快照/归档/还原的桌面工具(React;双运行时:Bun+Electrobun 默认 / Node+Electron 兼容,已落地 v1.0.0)。**项目说明、用法、完整文档目录见 [README.md](README.md)**;本文件只承载「与本用户协作的原则」「工程纪律」「本项目留档约定」,这些始终适用,不要每轮遗漏。
 

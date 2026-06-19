@@ -4,7 +4,16 @@
 
 ## 当前一句话
 
-核心功能(移动 / 历史对账 / 归档还原)与**双运行时**(Bun+Electrobun 默认 / Node+Electron 兼容)均已落地并发布 **v1.0.0**;两运行时共用核心、经构建期分流、功能对等。后续主要是遗留实测与打磨。
+核心功能(移动 / 历史对账 / 归档还原)与**双运行时**(Bun+Electrobun 默认 / Node+Electron 兼容)均已落地并发布 **v1.0.0**;两运行时共用核心、经构建期分流、功能对等。项目已改名 **`cc-session-manager-gui`**(原 `cc-move-session`,反映其已从「移动」长成完整会话管理 GUI),旧数据自动迁移。后续主要是遗留实测、打磨与更宏大的蓝图。
+
+## ✅ 改名 cc-session-manager-gui(2026-06-19)
+
+旧名 `cc-move-session` 只描述「移动」,已不符;统一更名 `cc-session-manager-gui` 并附**自动数据迁移**(下次启动幂等执行,既有移动/归档/还原历史不丢):
+
+- ✅ 产品身份全改:package.json(name/appId/productName/desc)、electrobun.config(app.name/identifier + version 对齐 1.0.0)、app 名(userData → `~/.config/cc-session-manager-gui`)、窗口标题、文档。
+- ✅ 磁盘数据目录改名 + 迁移:`~/.claude/.cc-move-{trash,archive,backups}` → `.cc-session-manager-*`;`migrateRename.ts` 启动时搬旧 userData 的 index 库、rename 三目录、重写库内绝对 `backup_path`/`trash_path`(TDD,5 测)。
+- ✅ 全套测试 141 通过、tsc 归零。
+- 冻结 spec/plan/spike-results 的日期文件名保留;正文项目名按需更新,历史代码/实测路径保留为史实。
 
 ## ✅ 已完成(里程碑)
 
@@ -37,6 +46,7 @@
 
 ## 💡 想法 / 未定
 
+- **更宏大的蓝图**(改名动因):项目定位从单一「移动会话」扩展为完整的 Claude Code 会话管理平台。新名 `cc-session-manager-gui` 的 `-gui` 已为未来非 GUI 前端(如 CLI / 服务化)共享同一套核心逻辑与数据层留口——数据目录刻意用 `cc-session-manager`(不带 `-gui`)。**具体蓝图待补**(方向确定后填入此处)。
 - **独立快照工具**:对 `~/.claude` 等目录做 restic 去重增量 + 可选 zstd 全量包的独立 CLI(方案见 [snapshot-plan.md](snapshot-plan.md)),日后可被本项目复用。
 - 远期:restic 后端扩展(SFTP/S3/rclone)异地;快照工具的 React UI。
 
