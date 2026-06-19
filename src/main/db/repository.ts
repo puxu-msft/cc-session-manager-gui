@@ -169,6 +169,16 @@ export function createRepository(driver: SqliteDriver) {
     getPendingRestores(): any[] {
       return (driver.prepare("SELECT * FROM restores WHERE status='pending'").all() as any[]).map(mapRestore)
     },
+    // 数据根目录改名后,重写库中存储的绝对路径前缀(前缀锚定,幂等:旧前缀不在则不命中)。
+    // backup_path 必须改——undoRestore 读它定位备份;trash_path 顺手改以保持库整洁——undoMove 实际
+    // 由「当前 trashRoot + moveId」派生、并不读它,但留旧路径在库里会误导。
+    // 用 substr 前缀锚定而非无锚 REPLACE:杜绝路径中段恰含旧前缀串时的误替换;old===new 时为 no-op。
+    rewriteDataRootPaths(oldBackupsRoot: string, newBackupsRoot: string, oldTrashRoot: string, newTrashRoot: string) {
+      driver.prepare('UPDATE restores SET backup_path = @new || substr(backup_path, length(@old)+1) WHERE substr(backup_path, 1, length(@old)) = @old')
+        .run({ old: oldBackupsRoot, new: newBackupsRoot })
+      driver.prepare('UPDATE moves SET trash_path = @new || substr(trash_path, length(@old)+1) WHERE substr(trash_path, 1, length(@old)) = @old')
+        .run({ old: oldTrashRoot, new: newTrashRoot })
+    },
     transaction<T>(fn: () => T): T { return driver.transaction(fn)() },
     close() { driver.close() },
   }

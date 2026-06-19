@@ -14,7 +14,7 @@ export class ElectrobunWindowHost implements WindowHost {
   createMainWindow(): void {
     const rpc = this.bridge.buildRPC()
     const win = new BrowserWindow<ProdRPC>({
-      title: 'cc-move-session',
+      title: 'cc-session-manager-gui',
       url: 'views://mainview/index.html',
       frame: { width: 1400, height: 900, x: 80, y: 60 },
       rpc,

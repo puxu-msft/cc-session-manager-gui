@@ -1,8 +1,9 @@
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { mkdirSync, existsSync, renameSync } from 'node:fs'
 import type { Db } from './db/db'
 import { detectSources, type Source } from './sources'
 import type { Paths } from './platform/contract'
+import { migrateUserData, migrateSourceData } from './migrateRename'
 
 // 每个数据源有独立的 sqlite 索引(index-<id>.db),互不混淆。活动源决定 getEnv() 返回哪套路径与 DB。
 let sources: Source[] | null = null
@@ -48,8 +49,12 @@ function dbFor(id: string): Db {
   let db = dbs.get(id)
   if (!db) {
     if (!dbFactory) throw new Error('appState: dbFactory 未初始化(应在启动时 setDbFactory)')
-    if (id === 'local') migrateLegacyLocalDb(userDataDir())
-    db = dbFactory(join(userDataDir(), `index-${id}.db`)); dbs.set(id, db)
+    const dir = userDataDir()
+    migrateUserData(dir)        // 改名迁移:把旧 app 名 userData 里的 index 库搬进新目录(幂等)
+    if (id === 'local') migrateLegacyLocalDb(dir)
+    db = dbFactory(join(dir, `index-${id}.db`)); dbs.set(id, db)
+    const src = listSources().find((s) => s.id === id)
+    if (src) migrateSourceData(dirname(src.trashRoot), db)   // 改名迁移:.cc-move-* 目录 rename + 库内绝对路径重写(幂等)
   }
   return db
 }

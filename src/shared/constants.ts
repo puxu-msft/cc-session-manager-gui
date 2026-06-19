@@ -6,7 +6,7 @@ export const SNAPSHOT_LINE_SIZE_CAP_BYTES = 2_000_000
 
 export const PROJECTS_ROOT = () => join(homedir(), '.claude', 'projects')
 export const CLAUDE_JSON = () => join(homedir(), '.claude.json')
-export const TRASH_ROOT = () => join(homedir(), '.claude', '.cc-move-trash')
+export const TRASH_ROOT = () => join(homedir(), '.claude', '.cc-session-manager-trash')
 
 export const CLAUDE_JSON_CLONE_ALLOWLIST = [
   'allowedTools',

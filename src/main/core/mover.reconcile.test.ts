@@ -10,7 +10,7 @@ import { reconcile } from './mover'
 function base() {
   const home = mkdtempSync(join(tmpdir(), 'home-rec-'))
   const projects = join(home, '.claude', 'projects'); mkdirSync(projects, { recursive: true })
-  const trash = join(home, '.claude', '.cc-move-trash'); mkdirSync(trash, { recursive: true })
+  const trash = join(home, '.claude', '.cc-session-manager-trash'); mkdirSync(trash, { recursive: true })
   const sourceFolder = join(projects, '-src'); mkdirSync(sourceFolder, { recursive: true })
   const targetFolder = join(projects, '-dst'); mkdirSync(targetFolder, { recursive: true })
   return { home, projects, trash, sourceFolder, targetFolder }

@@ -38,9 +38,9 @@ const zstdShim: BunPlugin = {
 //   - bundleCEF:false —— WSL 系统 webkit2gtk-4.1 已装齐(Phase 0 实测起窗 OK)。
 export default {
   app: {
-    name: 'cc-move-session',
-    identifier: 'com.local.cc-move-session',
-    version: '0.1.0',
+    name: 'cc-session-manager-gui',
+    identifier: 'com.local.cc-session-manager-gui',
+    version: '1.0.0',
   },
   build: {
     bun: {

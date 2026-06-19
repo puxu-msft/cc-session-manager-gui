@@ -9,8 +9,8 @@ import { archiverReconcile } from './archiver'
 function base() {
   const home = mkdtempSync(join(tmpdir(), 'arch-rec-'))
   const projects = join(home, '.claude', 'projects'); mkdirSync(projects, { recursive: true })
-  const archiveRoot = join(home, '.claude', '.cc-move-archive'); mkdirSync(archiveRoot, { recursive: true })
-  const backupsRoot = join(home, '.claude', '.cc-move-backups'); mkdirSync(backupsRoot, { recursive: true })
+  const archiveRoot = join(home, '.claude', '.cc-session-manager-archive'); mkdirSync(archiveRoot, { recursive: true })
+  const backupsRoot = join(home, '.claude', '.cc-session-manager-backups'); mkdirSync(backupsRoot, { recursive: true })
   const src = join(home, 'work', 'proj')
   const fdir = join(projects, encodePath(src)); mkdirSync(fdir, { recursive: true })
   return { home, projects, archiveRoot, backupsRoot, src, fdir }

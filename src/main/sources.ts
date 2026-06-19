@@ -34,10 +34,10 @@ function sourceFromClaudeHome(id: string, label: string, claudeHome: string): So
     label,
     projectsRoot: join(claudeHome, '.claude', 'projects'),
     claudeJsonPath: join(claudeHome, '.claude.json'),
-    trashRoot: join(claudeHome, '.claude', '.cc-move-trash'),
+    trashRoot: join(claudeHome, '.claude', '.cc-session-manager-trash'),
     historyJsonlPath: join(claudeHome, '.claude', 'history.jsonl'),
-    archiveRoot: join(claudeHome, '.claude', '.cc-move-archive'),
-    backupsRoot: join(claudeHome, '.claude', '.cc-move-backups'),
+    archiveRoot: join(claudeHome, '.claude', '.cc-session-manager-archive'),
+    backupsRoot: join(claudeHome, '.claude', '.cc-session-manager-backups'),
     exists: existsSync(join(claudeHome, '.claude', 'projects')),
   }
 }

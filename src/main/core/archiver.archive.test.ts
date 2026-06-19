@@ -10,8 +10,8 @@ import { buildManifest, packTree } from './tarPack'
 function world() {
   const home = mkdtempSync(join(tmpdir(), 'arch2-'))
   const projects = join(home, '.claude', 'projects'); mkdirSync(projects, { recursive: true })
-  const archiveRoot = join(home, '.claude', '.cc-move-archive'); mkdirSync(archiveRoot, { recursive: true })
-  const backupsRoot = join(home, '.claude', '.cc-move-backups'); mkdirSync(backupsRoot, { recursive: true })
+  const archiveRoot = join(home, '.claude', '.cc-session-manager-archive'); mkdirSync(archiveRoot, { recursive: true })
+  const backupsRoot = join(home, '.claude', '.cc-session-manager-backups'); mkdirSync(backupsRoot, { recursive: true })
   const src = join(home, 'work', 'proj'); mkdirSync(src, { recursive: true })
   const fdir = join(projects, encodePath(src)); mkdirSync(fdir, { recursive: true })
   const jsonl = join(fdir, 's1.jsonl')

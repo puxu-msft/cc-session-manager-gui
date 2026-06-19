@@ -23,7 +23,7 @@ describe('detectSources', () => {
     const local = s.find((x) => x.id === 'local')!
     expect(local.projectsRoot).toBe(join(homedir(), '.claude', 'projects'))
     expect(local.claudeJsonPath).toBe(join(homedir(), '.claude.json'))
-    expect(local.trashRoot).toBe(join(homedir(), '.claude', '.cc-move-trash'))
+    expect(local.trashRoot).toBe(join(homedir(), '.claude', '.cc-session-manager-trash'))
   })
   it('每个 source 含由 claudeHome 派生的 historyJsonlPath', () => {
     for (const s of detectSources()) {

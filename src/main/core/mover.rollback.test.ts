@@ -10,7 +10,7 @@ import { encodePath } from './pathCodec'
 function world() {
   const home = mkdtempSync(join(tmpdir(), 'home-'))
   const projects = join(home, '.claude', 'projects'); mkdirSync(projects, { recursive: true })
-  const trash = join(home, '.claude', '.cc-move-trash'); mkdirSync(trash, { recursive: true })
+  const trash = join(home, '.claude', '.cc-session-manager-trash'); mkdirSync(trash, { recursive: true })
   const src = join(home, 'work', 'proj'); mkdirSync(src, { recursive: true })
   const dst = join(home, 'work', 'moved'); mkdirSync(dst, { recursive: true })
   const fdir = join(projects, encodePath(src)); mkdirSync(fdir, { recursive: true })
