@@ -4,7 +4,7 @@
 
 ## 当前一句话
 
-核心功能(移动 / 历史对账 / 归档还原)已可用;正进行**双运行时改造**(Electrobun+Bun 一等 / Electron 兼容),Phase 0 Spike 已裁定 **go**,**运行时解耦(抽缝)正活跃落地中**——六大平台契约已抽出、Electron 实现就位、`BunSqliteDriver` 已写,剩 Electrobun 各宿主实现 + 构建分流。
+核心功能(移动 / 历史对账 / 归档还原)与**双运行时**(Bun+Electrobun 默认 / Node+Electron 兼容)均已落地并发布 **v1.0.0**;两运行时共用核心、经构建期分流、功能对等。后续主要是遗留实测与打磨。
 
 ## ✅ 已完成(里程碑)
 
@@ -18,21 +18,22 @@
 - **数据层抽象缝**:`SqliteDriver` 接口落地,repository 不再直接依赖 better-sqlite3(为双运行时铺路)。
 - **双运行时 Phase 0**:spec 经三方对抗审查 + 收敛裁决迭代至 v3;Phase 0 Spike 8/8 探针全 PASS,裁定 **go**(裁定见 `spike-results/2026-06-17-phase0.md`)。
 
-## 🚧 进行中:运行时解耦(抽缝)
+## ✅ 双运行时改造(已完成,v1.0.0)
 
-把 Electron 专属耦合抽到 `platform/contract.ts` 的运行时无关契约,核心装配只依赖接口(见 [ARCHITECTURE.md](ARCHITECTURE.md) 与双运行时 spec)。已落地(commit `3b83c86`→`9fd5868`):
+把 Electron 专属耦合抽到 `platform/contract.ts` 运行时无关契约,Bun+Electrobun 与 Node+Electron 经构建期分流并存、功能对等(架构见 [ARCHITECTURE.md](ARCHITECTURE.md),实测踩坑见 [electrobun-dev-guide.md](electrobun-dev-guide.md))。
 
-- ✅ 六大契约抽出:`AppHost` / `WindowHost` / `BridgeServer` / `Paths` / `ScanRunner` / `SqliteDriver`(`platform/contract.ts`)。
-- ✅ Electron 各宿主实现就位(`platform/electron/{app,window,bridge,paths,scanRunner}.ts`);`index.ts` 经 `app/bootstrap.ts` 装配,成薄入口。
-- ✅ `repository.ts` 从 `db.ts` 拆出(只依赖 `SqliteDriver`);`appState`/`ipc` 摆脱 electron 直接依赖(Paths/BridgeServer 注入)。
-- ✅ DB 工厂经 `Platform.dbFactory` 注入(Electron 注入 `openDb`,`appState` 摆脱 better-sqlite3 值依赖);共享 repository 已验证在 bun:sqlite 与 better-sqlite3 行为等价(spike)。
-- ✅ `BunSqliteDriver`(`platform/electrobun/sqliteDriver.ts`,bun:sqlite)已写。
+- ✅ 六大契约 + 注入式装配:`AppHost`/`WindowHost`/`BridgeServer`/`Paths`/`ScanRunner`/`SqliteDriver`;`app/bootstrap.ts` 只写一次,两入口(`src/main/index.ts` / `src/bun/index.ts`)各装配自己的 `Platform`。`repository.ts` 从 `db.ts` 拆出只依赖 `SqliteDriver`;DB 工厂经 `Platform.dbFactory` 注入。
+- ✅ 两侧实现齐全:Electron(`platform/electron/*`)+ Electrobun(`platform/electrobun/*`:app/window/bridge/paths/scanRunner/sqliteDriver/zstdShim/rpcSchema)+ `src/bun/{index,scanWorker}.ts`。
+- ✅ 渲染层两运行时共用同一份 App:`main.electrobun.tsx` 把 Electroview RPC 包成与 `window.api` 同形的 adapter,App/state/组件零改动复用。
+- ✅ Phase 3 运行时对等三处解法(dev-guide §7):zstd 用 `node:zlib` shim(标准 `.zst`,与 zstd-napi 跨运行时字节级互读)、扫描 worker 用独立预构建 bundle(避免 electrobun 抢占 50000 端口)、渲染端 RPC `maxRequestTime` 设 60s。
+- ✅ 构建期分流:`npm run dev`/`build`=Electrobun(默认),`:electron` 后缀=Electron(兼容);`electrobun.config.ts` 经 `sharedAlias`/`zstdShim` 两插件解决 `@shared` 解析与 native 模块不进 bundle。
+- ✅ 工程化:包管理切 `bun`(`bun.lock` 单一锁真相源,移除 package-lock.json)、`test:bun` 回归入口、GitHub Actions Windows x64 构建 + tag 触发草稿 Release、`tsc` 归零。
+- ✅ 发布 **v1.0.0**。
 
-## 🔜 下一步
+## 🔜 下一步 / 遗留
 
-- **Electrobun 侧实现**:`AppHost` / `WindowHost` / `BridgeServer`(defineRPC)/ `ScanRunner`(Bun)实现 + Electrobun 入口(对应 `index.ts` 的 Electron 装配,提供 bun:sqlite 版 `dbFactory`)。
-- **构建期运行时分流**:当前 `index.ts` 即写死的 Electron 入口;需按运行时选择装配哪套 `Platform` 实现集。
 - **Phase 0 遗留实测**(不阻塞):Electron 侧 `app.getPath('userData')` 运行时实测、EXDEV 跨设备 `rename` fallback 实测(需两挂载点)。
+- **打磨**:Electrobun 在 Linux 之外的打包/分发清单(当前 dev-guide §8 主覆盖 Linux/WSL)。
 
 ## 💡 想法 / 未定
 

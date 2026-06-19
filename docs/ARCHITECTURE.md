@@ -2,43 +2,47 @@
 
 > **这是活文档**:描述代码**当前**的样子(基准 commit 见文末),改架构时应同步更新(留档约定见 [CLAUDE.md](../CLAUDE.md))。设计**缘由/取舍**不在此复述,见对应冻结 spec(`docs/superpowers/specs/`)。产品视角的「它怎么工作」见 [README](../README.md)。
 >
-> ⚠️ 运行时解耦重构正在活跃推进中(见 [ROADMAP.md](ROADMAP.md)),`src/main/platform/**` 仍在演进——发现本文与代码不符时,以代码为准并回来更新本文。
+> 双运行时已落地(v1.0.0):Bun + Electrobun 为默认,Node + Electron 为兼容回退,核心逻辑/渲染层/IPC 契约两者共用、经构建期分流并存。
 
 ## 一图速览
 
 ```
-渲染进程 (React)        preload 桥           主进程 (运行时无关核心 + 平台实现)
-───────────────       ──────────        ─────────────────────────────────────────────
-App.tsx 三栏+视图  ─► window.api ─► platform/electron/bridge(ipcMain)─► ipc.ts(BridgeServer)
- state.ts                (.cjs)        │                                   bridge.handle(ctx,…args)
- components/*               ▲          │ index.ts(薄入口)─► app/bootstrap.ts(运行时无关装配)
-        ▲ refresh:progress  │          │   ├─ platform/contract.ts  六大运行时契约
-        └────── ctx.emit ───┘          │   ├─ platform/electron/*   Electron 实现(已就位)
-                                       │   └─ platform/electrobun/* Bun 实现(driver 已落,余待补)
-   shared/ (types · constants)         ├─ appState(注入 Paths)/ refresh / scanWorker / trash
-   两端共享                             ├─ core/**  纯业务逻辑(脱 UI 可测)
-                                       └─ db/**    repository(注入 SqliteDriver)
+                     默认: Bun + Electrobun          兼容: Node + Electron
+渲染层 (React,同一份)  src/bun/index.ts 入口           src/main/index.ts 入口
+ App.tsx 三栏+视图       装配 Electrobun Platform        装配 Electron Platform
+ state.ts / components/*          \                      /
+        ▲ window.api               ▼                    ▼
+        │ (Electron=preload.cjs;    app/bootstrap.ts(运行时无关装配,只写一次)
+        │  Electrobun=Electroview     │ setPaths/setDbFactory/registerIpc/createWindow
+        │  RPC adapter,同形)         ▼
+        └──────────────── platform/contract.ts  六契约 + Platform 聚合
+                          ├─ platform/electron/*    ipcMain·BrowserWindow·app·worker_threads·better-sqlite3
+                          ├─ platform/electrobun/*  RPC·BrowserView·Bun·独立 worker·bun:sqlite·zstdShim
+                          ├─ ipc · appState · refresh · trash · core/**   运行时无关核心
+                          └─ db/**  repository(注入 SqliteDriver)
+   shared/ (types · constants) 两端共享
 ```
 
-核心思路:**renderer** 只展示交互,经 preload 的 `window.api`(IPC 客户端契约)调主进程;主进程把**运行时无关的核心**(bootstrap 装配 + ipc + appState + core + db repository)与**平台专属实现**(`platform/electron/**`、将来 `platform/electrobun/**`)分开,二者经 `platform/contract.ts` 的接口对接;`index.ts` 只负责装配某一运行时的实现并启动。
+核心思路:**renderer** 只展示交互,经 `window.api`(IPC 客户端契约)调主进程;主进程把**运行时无关的核心**(bootstrap 装配 + ipc + appState + core + db repository + 渲染层)与**平台专属实现**(`platform/electron/**`、`platform/electrobun/**`)分开,二者经 `platform/contract.ts` 的接口对接;两个入口(`src/main/index.ts` / `src/bun/index.ts`)各装配某一运行时的实现并调同一 `bootstrap`。
 
 ## 分层与模块职责
 
-### 运行时契约与装配 `src/main/platform/` + `src/main/app/`
+### 运行时契约与装配 `src/main/platform/` + `src/main/app/` + 两入口
 
-- `platform/contract.ts` — **运行时抽象的真相源**,定义六个接口:`AppHost`(生命周期=Electron `app`)、`WindowHost`(建窗=`BrowserWindow`+preload)、`BridgeServer`(IPC 服务端=`ipcMain.handle`+`sender.send`;handler 签名 `(ctx, ...args)`,`ctx.emit` 单向回推)、`Paths`(`userData()`=`app.getPath`)、`ScanRunner`(后台扫描=`worker_threads`,进度走 `onProgress` 回调)、`SqliteDriver`(`prepare/exec/pragma/transaction/close`)。`Platform` 把一套实现聚合为 `{appHost, windowHost, bridge, paths, dbFactory}` 交给 bootstrap(`dbFactory: (file)=>Db` 由各运行时提供其 DB 工厂)。核心装配只依赖这些接口。
-- `platform/electron/` — Electron 实现:`app.ts`(`ElectronAppHost`)、`window.ts`(`ElectronWindowHost`,preload 指向 `index.cjs`)、`bridge.ts`(`ElectronBridge`:`ipcMain.handle` + 经 `event.sender` 回推)、`paths.ts`(`electronPaths`)、`scanRunner.ts`(`ElectronScanRunner`:worker_threads)。
-- `platform/electrobun/` — Electrobun/Bun 实现:`sqliteDriver.ts`(`BunSqliteDriver`,`bun:sqlite`,strict 模式)**已写**;app/window/bridge/scanRunner 的 Electrobun 实现待补。
-- `app/bootstrap.ts` — **运行时无关装配**(只写一次):`setName` → `whenReady` 后 `setPaths`/`setDbFactory`/`registerIpc`/`createMainWindow` → `onWindowAllClosed`/`onBeforeQuit`(中断扫描 + 关库)。Electron 与 Electrobun 各传入自己的 `Platform` 实现。
-- `index.ts` — **薄入口**:装配 Electron 的 `Platform` 实现并调 `bootstrap(...)`。Electrobun 入口将以同样方式装配其实现,共享 bootstrap 与全部核心。
+- `platform/contract.ts` — **运行时抽象的真相源**,定义六个接口:`AppHost`(生命周期=Electron `app`)、`WindowHost`(建窗=`BrowserWindow`+preload / `BrowserView`)、`BridgeServer`(IPC 服务端;handler 签名 `(ctx, ...args)`,`ctx.emit` 单向回推)、`Paths`(`userData()`)、`ScanRunner`(后台扫描,进度走 `onProgress` 回调)、`SqliteDriver`(`prepare/exec/pragma/transaction/close`)。`Platform` 把一套实现聚合为 `{appHost, windowHost, bridge, paths, dbFactory, scanRunner?}`(`dbFactory:(file)=>Db` 由各运行时提供 DB 工厂;`scanRunner` 可选——Electron 省略走默认 worker_threads 实现,Electrobun 注入自己的)。核心装配只依赖这些接口。
+- `platform/electron/` — Electron 实现:`app.ts`(`ElectronAppHost`)、`window.ts`(`ElectronWindowHost`,preload 指向 `index.cjs`)、`bridge.ts`(`ElectronBridge`:`ipcMain.handle` + 经 `event.sender` 回推)、`paths.ts`(`electronPaths`=`app.getPath`)、`scanRunner.ts`(`ElectronScanRunner`:`worker_threads`)。
+- `platform/electrobun/` — Electrobun/Bun 实现:`app.ts`/`window.ts`(`BrowserWindow`+`BrowserView`;建窗时取 `bridge.buildRPC()` 并 `attachWindow`,使 `ctx.emit` 经 `win.webview.rpc.send` 回推)、`bridge.ts`(`ElectrobunBridge`:`BrowserView.defineRPC`)、`paths.ts`(`electrobunPaths`,自拼复刻同一物理路径)、`scanRunner.ts`(`ElectrobunScanRunner`,加载独立预构建 worker bundle)、`sqliteDriver.ts`(`BunSqliteDriver`,`bun:sqlite` strict)、`zstdShim.ts`(`node:zlib` 的 zstd 流)、`rpcSchema.ts`(共享 RPC 类型)。
+- `src/bun/` — Electrobun 侧源:`index.ts`(入口,basename 必须为 `index`——launcher 硬编码加载 `bun/index.js`)、`scanWorker.ts`(独立扫描 worker 源,预构建为不含 electrobun 的 bundle)。
+- `app/bootstrap.ts` — **运行时无关装配**(只写一次):`setName` → `whenReady` 后 `setPaths`/`setDbFactory`/`registerIpc`/`createMainWindow` → `onWindowAllClosed`/`onBeforeQuit`(中断扫描 + 关库)。两入口各传入自己的 `Platform`。
+- 入口 — `src/main/index.ts`(Electron:装 `ElectronAppHost/WindowHost/Bridge/electronPaths/openDb`)与 `src/bun/index.ts`(Electrobun:装 `Electrobun*` + `dbFactory`=bun:sqlite 包进共享 `createRepository` + `ElectrobunScanRunner`),除装配外无逻辑差异,共享 `bootstrap` 与全部核心。
 
 ### 主进程编排层 `src/main/`(运行时无关胶水,薄)
 
-- `ipc.ts` — **IPC 契约服务端**:`registerIpc(bridge: BridgeServer)`,全部通道经注入的 `bridge.handle('<channel>', (ctx, …args) => …)` 注册(不再直接依赖 electron);进度经 `ctx.emit('refresh:progress', …)`;启动即 `reconcile`/`archiverReconcile` 收尾 pending;持一个 `ElectronScanRunner` 跑扫描、`terminate()` 即中断。
-- `appState.ts` — 多源运行环境:`getEnv()` 返回当前活动源的 `Env`(独立 `Db` + 该源 projects/claude.json/trash/archive/backups 路径);每源一套 `index-<id>.db`;userData 路径经注入的 `Paths`(`setPaths`)、DB 创建经注入的 `dbFactory`(`setDbFactory`,Electron 注入 `openDb`),**不再直接依赖 electron 或 better-sqlite3**;含旧单库 `index.db → index-local.db` 一次性迁移。
+- `ipc.ts` — **IPC 契约服务端**:`registerIpc(bridge: BridgeServer, runner?: ScanRunner)`,全部通道经注入的 `bridge.handle('<channel>', (ctx, …args) => …)` 注册(不依赖 electron);进度经 `ctx.emit('refresh:progress', …)`;`scanRunner` 可注入(默认 `ElectronScanRunner`);启动即 `reconcile`/`archiverReconcile` 收尾 pending。通道含 sources/index/sessions、`refresh:run`、`refresh:project`(单项目刷新)、`check:updates`(会话数据更新检测)、move/trash/history/archive 各操作。
+- `appState.ts` — 多源运行环境:`getEnv()` 返回当前活动源的 `Env`(独立 `Db` + 该源 projects/claude.json/trash/archive/backups 路径);每源一套 `index-<id>.db`;userData 路径经注入的 `Paths`(`setPaths`)、DB 创建经注入的 `dbFactory`(`setDbFactory`),**不再直接依赖 electron 或 better-sqlite3**;含旧单库 `index.db → index-local.db` 一次性迁移。
 - `sources.ts` — 数据源探测:一个源=一套某家目录下的 `.claude`;WSL 下探测 Linux 侧 + Windows 侧(经 `cmd.exe` 取 `%USERPROFILE%`,失败则扫 `/mnt/c/Users`)两套,各自独立。
 - `refresh.ts` — `applyScanToIndex(db, scan, existing)`:刷新落库的**纯函数**(算 diff → 事务内 upsert/删除),供 IPC 与集成测试共用(逻辑与 UI 分离的范例)。
-- `scanWorker.ts` — `worker_threads` 扫描线程入口(由 `ElectronScanRunner` 拉起)。
+- `scanWorker.ts` — Electron 的 `worker_threads` 扫描线程入口(由 `ElectronScanRunner` 拉起);Electrobun 用独立预构建的 `src/bun/scanWorker.ts`。
 - `trash.ts` — 回收区占用统计与单条/全部清理。
 
 ### 核心业务逻辑 `src/main/core/`(纯函数,不依赖 Electron/IPC,独立单测)
@@ -52,7 +56,7 @@ App.tsx 三栏+视图  ─► window.api ─► platform/electron/bridge(ipcMain
 - `mover.ts` — 移动管线:`previewMove`(预检:活跃/碰撞/自指阻断)、`executeMove`、`reconcile`(崩溃后收尾 pending)、`undoMove`(撤销)。
 - `historyJsonl.ts` / `historyReconciler.ts` — `history.jsonl` 项目引用对账:`planReconcile`/`planForce` → `executeReconcile` → `undoRewrite`。
 - `archiver.ts` — 快照/归档/还原:`snapshotSession`/`archiveSession`/`restoreVersion`/`undoRestore`/`deleteVersion`/`listVersions`/`archiveUsage`/`archiverReconcile`(同会话多版本时间线;还原前现状入 backups 安全网)。
-- `tarPack.ts` — 归档打包:`tar` + `zstd`(zstd-napi 流式,level 19 + 多线程 + LDM)。
+- `tarPack.ts` — 归档打包:`tar` + `zstd`(Electron 用 zstd-napi 流式 level19+多线程+LDM;Electrobun 经 onResolve 换 `zstdShim.ts`/node:zlib,产物标准 `.zst` 跨运行时互读;本文件两运行时零改动)。
 
 ### 数据层 `src/main/db/`(repository 模式 + 注入式 driver)
 
@@ -64,27 +68,32 @@ App.tsx 三栏+视图  ─► window.api ─► platform/electron/bridge(ipcMain
 
 ### preload / renderer / shared
 
-- `preload/index.ts` — `contextBridge.exposeInMainWorld('api', …)` 暴露 `window.api`,逐方法 `ipcRenderer.invoke('<channel>')` + `onRefreshProgress` 订阅;`Api` 类型与 `window.api` 全局声明的真相源都在此(shared 不反向依赖 preload)。**必须打成 `.cjs`**(见记忆 `docs/memory/electron-preload-cjs-under-type-module.md`)。
-- `renderer/` — React:`main.tsx` 挂载;`App.tsx` 编排三栏(`DirectoryPane` 项目 / `SessionPane` 会话 / `FsBrowserPane` 目标目录)+ `MoveBar` + `ConfirmModal` + `HistoryView`/`HistoryReconcileView`/`ArchiveTimelineView` 三视图;`state.ts` 的 `useAppState` 持客户端态;`lib/reconcileView.ts` 视图纯逻辑。
+- `preload/index.ts`(**Electron 专属**)— `contextBridge.exposeInMainWorld('api', …)` 暴露 `window.api`,逐方法 `ipcRenderer.invoke('<channel>')` + `onRefreshProgress` 订阅;`Api` 类型与 `window.api` 全局声明的真相源在此(shared 不反向依赖 preload;Electrobun 渲染入口构造同形对象对齐它)。**必须打成 `.cjs`**(见记忆 `docs/memory/electron-preload-cjs-under-type-module.md`)。
+- `renderer/`(两运行时共用同一份 `App.tsx`/`state.ts`/组件)— 两个入口:`main.tsx`+`index.html`(Electron,经 preload 的 `window.api`)、`main.electrobun.tsx`+`index.electrobun.html`(Electrobun,把 `Electroview` 的 RPC 包成与 `window.api`(`Api` 形)**同形**的 adapter 挂到 `window.api`,使 App 零改动复用;含 `maxRequestTime:60000`)。`App.tsx` 编排三栏(`DirectoryPane` 项目 / `SessionPane` 会话 / `FsBrowserPane` 目标目录)+ `MoveBar` + `ConfirmModal` + `HistoryView`/`HistoryReconcileView`/`ArchiveTimelineView` 三视图;`state.ts` 的 `useAppState` 持客户端态;`lib/reconcileView.ts` 视图纯逻辑。
 - `shared/` — 两端共享契约:`types.ts`(`SessionMeta`/`ProjectMeta`/`MovePreview`/各 `*Result`/进度等 IPC 载荷类型)、`constants.ts`(活跃判定阈值 `LIVE_MTIME_THRESHOLD_MS`、快照行大小上限、各路径、claude.json 克隆白名单)。
 
 ## 数据模型(SQLite,每源一库 `index-<id>.db`)
 
 schema v3,9 张表:`projects` / `sessions`(索引镜像;真相永远是磁盘 jsonl,库只保证与磁盘一致)、`moves` + `cwd_changes` + `snapshot_lines`(移动记录、每行 cwd 改动、小文件改动行完整快照)、`history_rewrites` + `history_rewrite_sessions`(history.jsonl 对账)、`archive_versions`(快照/归档版本,`compressed_bytes` 不绑压缩算法,由 v2 的 `gz_total_bytes` RENAME 迁移而来)、`restores`(还原记录,带 `phase` 用于崩溃恢复)。
 
+## 构建与运行时分流
+
+- **默认 Electrobun**:`npm run dev`/`build` → `bun run bun:dev`/`bun:build` → 先 `scripts/build-electrobun-worker.mjs` 预构建独立扫描 worker,再 `bunx electrobun dev/build`。
+- **兼容 Electron**:`npm run dev:electron`/`build:electron`(electron-vite);`pack`/`dist`/`e2e` 仍走 Electron 路径。
+- **`electrobun.config.ts`**:`bun.entrypoint=src/bun/index.ts`、`views.mainview.entrypoint=src/renderer/main.electrobun.tsx`、`copy`(html + 预构建 `scanWorker.js`);两个 `Bun.build` 插件——`sharedAlias`(把 `@shared/*` 解析到 `src/shared`,因 Bun.build 不读 tsconfig paths)、`zstdShim`(onResolve 把 `zstd-napi` 换成 `zstdShim.ts`,因 `.node` 原生模块进 Bun bundle 会崩)。
+- **包管理**:`bun`(`bun.lock` 为锁真相源;`bun install` 实测正确触发 `electron-builder` 把 better-sqlite3 重建为 Electron ABI)。
+- **测试**:`npm test` 跑 Electron runner(better-sqlite3 ABI,见 README「原生模块与测试运行时」);`npm run test:bun` 跑 Bun 运行时探针回归。
+- 实测踩坑与打包分发清单见 [electrobun-dev-guide.md](electrobun-dev-guide.md)(§5.5 native 模块不能进 bundle、§7 Phase 3 三处解法、§8 Linux 分发清单)。
+
 ## 贯穿全局的约定
 
 - **磁盘 jsonl 为唯一真相**:Claude Code 只读磁盘 jsonl 不读本库;工具职责是保证磁盘与索引一致。
-- **运行时无关核心 + 平台实现分离**:核心(bootstrap/ipc/appState/core/repository)只依赖 `platform/contract.ts` 接口;Electron/Electrobun 各注入实现;具体 `better-sqlite3`/`bun:sqlite`/`ipcMain`/`BrowserWindow`/`app`/`worker_threads` 都被关在各自的 `platform/<runtime>/` 实现里。
+- **运行时无关核心 + 平台实现分离**:核心(bootstrap/ipc/appState/core/repository/渲染层)只依赖 `platform/contract.ts` 接口;两运行时各注入实现;具体 `better-sqlite3`/`bun:sqlite`/`ipcMain`/`BrowserWindow`/`app`/`worker_threads`/`zstd-napi` 都被关在各自的 `platform/<runtime>/` 实现里。
 - **逻辑与 UI 分离**:编排/副作用在 main + core 纯函数;handler/组件只做薄胶水,核心逻辑用真实依赖(内存 SQLite)脱 UI 测试(见 CLAUDE.md 工程纪律)。
 - **多源隔离**:每数据源独立 DB 与独立回收/归档/备份区。
 - **崩溃恢复 = pending + reconcile**:移动/归档/还原先记 `pending`,启动与切源时 `reconcile` 判定补记 done 或回滚 failed。
 - **非破坏性**:移动入回收区、还原前现状入 backups、归档库与备份区**默认不自动 GC**,均可撤销/手动清理。
-- **不阻塞主进程**:全量扫描在 worker;刷新可被新刷新/切源/退出抢占(`terminate`)。
-
-## 双运行时改造现状
-
-抽象缝**已落地**:`AppHost`/`WindowHost`/`BridgeServer`/`Paths`/`ScanRunner`/`SqliteDriver` 六契约定义于 `platform/contract.ts`,Electron 侧实现全部就位,`index.ts` 经 `bootstrap` 装配 `Platform`(含 `dbFactory`);`BunSqliteDriver`(bun:sqlite)已写,DB 工厂也已注入化(`Platform.dbFactory`,Electron 入口注入 `openDb`/better-sqlite3)。**尚未做**:Electrobun 侧 `AppHost`/`WindowHost`/`BridgeServer`/`ScanRunner` 实现与入口(提供 bun:sqlite 版 `dbFactory`)、构建期运行时分流(按运行时选择装配哪套 `Platform`;当前 `index.ts` 即写死的 Electron 入口)。进度与下一步见 [ROADMAP.md](ROADMAP.md);设计见双运行时 spec。
+- **不阻塞主进程**:全量扫描在独立 worker;刷新可被新刷新/切源/退出抢占(`terminate`)。
 
 ## 关键文件 → 主题(配套 spec)
 
@@ -93,9 +102,9 @@ schema v3,9 张表:`projects` / `sessions`(索引镜像;真相永远是磁盘 js
 | 移动管线 | `core/{pathCodec,cwdRewriter,jsonlScanner,scanner,mover,claudeJson,fsMove}.ts` | `specs/2026-06-15-cc-move-session-design.md` |
 | 历史 JSONL 对账 | `core/{historyJsonl,historyReconciler}.ts` | `specs/2026-06-16-history-jsonl-reconciler-design.md` |
 | 归档/还原 | `core/{archiver,tarPack}.ts` | `specs/2026-06-17-session-archive-restore-design.md` |
-| 运行时契约 / 双运行时 | `platform/contract.ts`、`platform/{electron,electrobun}/**`、`app/bootstrap.ts`、`db/{repository,driver}.ts` | `specs/2026-06-17-dual-runtime-electrobun-electron-design.md` |
+| 双运行时(契约/实现/分流) | `platform/contract.ts`、`platform/{electron,electrobun}/**`、`src/bun/**`、`app/bootstrap.ts`、`db/{repository,driver}.ts`、`electrobun.config.ts` | `specs/2026-06-17-dual-runtime-electrobun-electron-design.md` + [electrobun-dev-guide.md](electrobun-dev-guide.md) |
 | 多源 / WSL | `main/{appState,sources}.ts` | README「## 数据源(WSL)」 |
 
 ---
 
-> 基准:对准至 `29c9113`(2026-06-18,运行时解耦重构进行中,`platform/**` 仍可能有在途改动)。
+> 基准:HEAD `92bbf0c`(v1.0.0,2026-06-19,双运行时已落地)。
