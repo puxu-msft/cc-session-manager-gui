@@ -31,7 +31,7 @@ const zstdShim: BunPlugin = {
 
 // Electrobun 双运行时配置(Phase 2)。
 // 与 Electron 路径完全平行:bun.entrypoint 装配 Bun 平台并启动;views.mainview 打包生产渲染层。
-//   - bun.entrypoint:src/main/entry.electrobun.ts(装配 ElectrobunAppHost/WindowHost/Bridge + bun:sqlite)
+//   - bun.entrypoint:src/bun/index.ts(装配 ElectrobunAppHost/WindowHost/Bridge + bun:sqlite)
 //   - views.mainview.entrypoint:src/renderer/main.electrobun.tsx(注入 window.api adapter 后渲染生产 App)
 //     Electrobun 内部 Bun.build 把它打包为 views/mainview/index.js,html 引用该产物。
 //   - copy:把 view 的 html 拷到 views/mainview/index.html(html 引用编译产物 index.js)。

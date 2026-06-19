@@ -52,7 +52,8 @@ export interface Platform {
   paths: Paths
   dbFactory: (file: string) => Db
   // 后台扫描运行器。可选:Electron 不传,ipc 层回退默认的 worker_threads 实现(行为不变);
-  // Electrobun 传入进程内异步实现(其打包不便定位独立 worker 入口)。
+  // Electrobun 传入基于独立预构建 worker bundle 的 worker_threads 实现(electrobun 打包不产独立 worker
+  // chunk,故 worker 入口预构建成不含 electrobun 的 bundle 单独加载,避免框架顶层副作用抢占端口)。
   scanRunner?: ScanRunner
 }
 

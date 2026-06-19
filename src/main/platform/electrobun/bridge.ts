@@ -14,7 +14,7 @@ type Handler = (ctx: BridgeContext, ...args: any[]) => unknown
 //   3. window.ts 创建 BrowserWindow 后调用 bridge.attachWindow(win),使 ctx.emit 有处可发。
 //
 // 适配要点:contract 的 handler 签名是 (ctx, ...args);electrobun request handler 拿到的是单个
-// params 对象。这里用 { args:[...] } 信封在两侧之间转换,使 26 通道机械接线、无需逐通道写适配。
+// params 对象。这里用 { args:[...] } 信封在两侧之间转换,使全部通道机械接线、无需逐通道写适配。
 export class ElectrobunBridge implements BridgeServer {
   private handlers = new Map<string, Handler>()
   private win: { webview?: { rpc?: { send: Record<string, (p: unknown) => void> } } } | null = null
