@@ -45,13 +45,25 @@
 - ✅ 渲染层两运行时共用同一份 App:`main.electrobun.tsx` 把 Electroview RPC 包成与 `window.api` 同形的 adapter,App/state/组件零改动复用。
 - ✅ Phase 3 运行时对等三处解法(dev-guide §7):zstd 用 `node:zlib` shim(标准 `.zst`,与 zstd-napi 跨运行时字节级互读)、扫描 worker 用独立预构建 bundle(避免 electrobun 抢占 50000 端口)、渲染端 RPC `maxRequestTime` 设 60s。
 - ✅ 构建期分流:`npm run dev`/`build`=Electrobun(默认),`:electron` 后缀=Electron(兼容);`electrobun.config.ts` 经 `sharedAlias`/`zstdShim` 两插件解决 `@shared` 解析与 native 模块不进 bundle。
-- ✅ 工程化:包管理切 `bun`(`bun.lock` 单一锁真相源,移除 package-lock.json)、`test:bun` 回归入口、GitHub Actions Windows x64 构建 + tag 触发草稿 Release、`tsc` 归零。
+- ✅ 工程化:包管理切 `bun`(`bun.lock` 单一锁真相源,移除 package-lock.json)、`test:bun` 回归入口、GitHub Actions Windows x64 构建(后重构为**分层发布**,见「Windows 分层发布 + 自动更新接入」段)、`tsc` 归零。
 - ✅ 发布 **v1.0.0**。
+
+## ✅ Windows 分层发布 + 自动更新接入(2026-06-22)
+
+把 Windows 发布从「electron-builder 单一 electron 产物 + 聚合 artifact」重构为**双运行时分层发布**(默认 electrobun),并接入两套自动更新。架构见 [ARCHITECTURE.md](ARCHITECTURE.md)「发布与自动更新」,裁定见 `spike-results/2026-06-22-electrobun-win-packaging.md`。
+
+- ✅ **spike GATE**:electrobun 从未在 windows runner 验证过(原 ROADMAP 遗留项)。spike CI 在 windows-latest 跑通 electrobun 打包链(并修掉 worker 预构建的跨平台路径 bug——`import.meta.dir.replace(/\/scripts$/,'')` 正则硬编码正斜杠,Windows 反斜杠路径不匹配致项目根误解析)、用户桌面实测 artifact 可启动运行 → GATE GO。
+- ✅ **分层发布**(`.github/workflows/build-windows.yml` 4 job):基础版(tag `v*`)→ electrobun 便携 zip(无自更新);完整版(Release published)→ 默认仅 electrobun(zip+update.json);electron 退为手动覆盖(`workflow_dispatch runtime=electron/both`→nsis+zip+latest.yml)。端到端 tag 实测 Release 仅单一便携 zip、无 latest.yml/无聚合。
+- ✅ **元数据不进聚合包**:删除旧 CI 把 `release/*`(exe/zip/blockmap/latest.yml)聚合成单一 artifact 的做法——分发件与更新元数据均走 Release 独立资产逐文件。
+- ✅ **electron-updater 接入**:新增 `UpdaterHost` 契约 + `ElectronUpdaterHost` 隔离;`app:update` 事件链 + 顶部更新提示条「有新版/下载中/可安装」。electrobun 渲染适配器补 no-op 同形(自带 bsdiff 不接 electron-updater)。
+- ✅ **electrobun 自更新**:`electrobun.config.ts` 补 `release.baseUrl` + `generatePatch:false`(纯全量)。
+- ✅ **win.target 默认 zip**(去 nsis,完整版 electron CLI `--win nsis zip` 覆盖加回);**版本单一真相源**(electrobun.config `app.version` 取 `package.json`)。
+- 🔜 follow-up:真 portable(非自解压 `Setup.zip`);electron-updater 下载/安装闭环双版本桌面验证;完整版 `release`/`electron-full` CI 路径端到端验证(本轮仅验证了 tag→electrobun-basic)。
 
 ## 🔜 下一步 / 遗留
 
 - **Phase 0 遗留实测**(不阻塞):Electron 侧 `app.getPath('userData')` 运行时实测、EXDEV 跨设备 `rename` fallback 实测(需两挂载点)。
-- **打磨**:Electrobun 在 Linux 之外的打包/分发清单(当前 dev-guide §8 主覆盖 Linux/WSL)。
+- **打磨**:Electrobun **Windows** 打包/分发已验证并落地分层发布(spike GATE GO,2026-06-22,见上段);**macOS** 打包/分发清单仍待(dev-guide §8 主覆盖 Linux/WSL)。
 
 ## 💡 想法 / 未定
 
