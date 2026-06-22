@@ -64,4 +64,12 @@ export default {
     linux: { bundleCEF: false },
     win: { bundleCEF: false },
   },
+  // 自更新(electrobun 全量/bsdiff 机制):从 GitHub Release 最新资产基址拉 <prefix>-update.json 比对版本。
+  // 首发 generatePatch:false —— 不生成增量 patch(纯全量 tar.zst 更新),避免无上一版时拉 prev 失败;
+  // 后续若要增量更新再开 true。仅完整版(release published / dispatch tier=full)上传 update.json,
+  // 基础版(tag)只发便携 zip、不带自更新。
+  release: {
+    baseUrl: 'https://github.com/puxu-msft/cc-session-manager-gui/releases/latest/download',
+    generatePatch: false,
+  },
 } satisfies ElectrobunConfig
