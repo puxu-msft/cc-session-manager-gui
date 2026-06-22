@@ -7,9 +7,11 @@
 // ElectrobunScanRunner 在运行时以 import.meta.dir + 'scanWorker.js' 定位并加载它。
 //
 // alias:与 electrobun.config.ts 同规则,把 @shared/* 映射到 src/shared/*(Bun.build 不读 tsconfig paths)。
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 
-const root = import.meta.dir.replace(/\/scripts$/, '')
+// 项目根 = scripts/ 的父目录。用 dirname 跨平台取父目录,勿用正则去尾(Windows 路径分隔符为反斜杠,
+// 硬编码 /scripts$ 的正则在 Windows 上不匹配 → root 误指向 scripts/ 自身,致 src/bun 解析失败)。
+const root = dirname(import.meta.dir)
 
 const sharedAlias = {
   name: 'shared-alias',
