@@ -1,26 +1,98 @@
-# Windows x64 构建。当前矩阵刻意只含 windows-x64;其他平台保留可能性(见 matrix 注释),不直接生成。
+# Windows x64 构建 / 发布。
 #
-# 为什么用 CI 而非 WSL 跨建:better-sqlite3 是 ABI 绑定的原生模块,必须在目标平台(Windows + Electron ABI)
-# 本地用 MSVC 重建,无法从 Linux 跨编译。GitHub windows-latest 自带 VS 2022 + Python,electron-builder
-# install-app-deps 会在 runner 上把它按 Electron 42 的 ABI 重建。zstd-napi 是 N-API,同样由该步处理。
+# 运行时定位(项目纪律:Bun+Electrobun 默认,Node+Electron 兼容):
+#   - 默认发布产物来自 electrobun;Electron 退为「手动覆盖」(workflow_dispatch 选 runtime,或改配置)。
+#   - electrobun build 只构建宿主平台(不跨编译),故 Windows 产物必须在 windows-latest 上构建。
+#   - electrobun 路径用 bun:sqlite + zstdShim,不需要 better-sqlite3 的 MSVC ABI 重建;
+#     仅 Electron 路径(electron-builder)需要 install-app-deps 重建原生模块。
+#
+# 触发 → 产物映射(随阶段推进逐步补全):
+#   - workflow_dispatch (tier=spike)         → spike job:electrobun Windows 打包验证(G0 GATE,不发布)
+#   - push tag v*                            → 基础版:electron dist(现状,待 G1 切 electrobun)
+#   - release published                      → 完整版(G3 加入):默认仅 electrobun
 name: build
 
 on:
-  workflow_dispatch: {}        # 手动触发(测试用)
+  workflow_dispatch:
+    inputs:
+      runtime:
+        description: '构建运行时(默认 electrobun;electron/both 为手动覆盖)'
+        type: choice
+        options: [electrobun, electron, both]
+        default: electrobun
+      tier:
+        description: '层级:spike(G0 验证)/ basic(基础版)/ full(完整版)'
+        type: choice
+        options: [spike, basic, full]
+        default: spike
   push:
     tags:
-      - 'v*'                    # 打 v* tag 时出包
+      - 'v*'                    # 打 v* tag 时出基础版
 
 permissions:
-  contents: write        # tag 触发时由 electron-builder 创建草稿 Release 并上传产物;需要写权限
+  contents: write        # 发布到 GitHub Release(electron-builder 或 gh release upload)需写权限
 
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # ============ G0 GATE:electrobun Windows 打包验证 ============
+  # 本项目从未在 windows runner 上跑过 electrobun build(ROADMAP 标未完成)。此 job 验证打包链能否
+  # 在 windows-latest 跑通、产物结构是否正确。CI 无头,仅能验「打包链 + 产物结构」;起窗/扫描/WSL
+  # 源探测/托盘需在真实 Windows 桌面手测。GO 后方可推进 G1(把 tag 路径切到 electrobun)。
+  spike:
+    name: spike-electrobun-win-x64
+    if: github.event_name == 'workflow_dispatch' && inputs.tier == 'spike'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14        # 与项目 Phase 3 实测一致
+
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      # scanWorker 独立 bundle 必须先于 electrobun build 预构建(由 electrobun.config build.copy 拷入产物);
+      # 漏跑会导致产物缺 scanWorker → 运行时扫描崩。
+      - name: Pre-build scan worker
+        run: bun run bun:build:worker
+
+      # 首次在 windows-latest 跑会触发 electrobun core/bun/WebView2 依赖下载(验证下载链在 CI 网络是否通)。
+      - name: Electrobun build (stable channel)
+        run: bunx electrobun build --env=stable
+
+      # 断言 Windows 分发产物存在且命名/结构正确(electrobun 自带便携 zip,前缀 stable-win-x64-)。
+      - name: Assert artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "== artifacts/ =="
+          ls -la artifacts/ || { echo "NO artifacts/ dir"; exit 1; }
+          shopt -s nullglob
+          zips=(artifacts/stable-win-x64-*.zip)
+          [ ${#zips[@]} -gt 0 ] || { echo "MISSING stable-win-x64-*.zip"; exit 1; }
+          [ -f artifacts/stable-win-x64-update.json ] || { echo "MISSING stable-win-x64-update.json"; exit 1; }
+          echo "OK zip(s): ${zips[*]}"
+          echo "OK update.json present"
+
+      # 仅作 CI 自检下载(单一 zip),不发 Release。
+      - name: Upload spike artifact (self-check only)
+        uses: actions/upload-artifact@v4
+        with:
+          name: spike-electrobun-win-x64
+          path: artifacts/stable-win-x64-*.zip
+          if-no-files-found: error
+
+  # ============ 基础版(现状:electron;待 G1 切 electrobun)============
+  # 暂保留现有 electron-builder 流程不动,仅加 if 限定为 tag 触发,避免 workflow_dispatch 误触发 electron。
   dist:
     name: dist-${{ matrix.platform }}-${{ matrix.arch }}
+    if: github.event_name == 'push'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -64,12 +136,11 @@ jobs:
       - name: Build renderer + main (electron-vite)
         run: bun run build:electron
 
-      # 仅 tag(refs/tags/*)触发时发布:--publish always → electron-builder 建「草稿」Release 并上传
-      # exe/zip/latest.yml/blockmap;workflow_dispatch 等非 tag 运行 → --publish never,只构建不发布。
+      # tag(refs/tags/*)触发:--publish always → electron-builder 建「草稿」Release 并上传 exe/zip/latest.yml/blockmap。
       - name: Package (electron-builder)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}    # electron-builder 读 GH_TOKEN 做 GitHub 发布
-        run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish ${{ startsWith(github.ref, 'refs/tags/') && 'always' || 'never' }}
+        run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish always
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

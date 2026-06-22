@@ -4,6 +4,7 @@ out/
 release/
 build/
 build-worker/
+artifacts/
 .vite/
 coverage/
 *.log
