@@ -11,3 +11,6 @@ coverage/
 .DS_Store
 test-results/
 playwright-report/
+
+# Serena MCP 工具本地配置
+.serena/

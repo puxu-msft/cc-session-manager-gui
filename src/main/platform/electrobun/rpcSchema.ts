@@ -8,17 +8,19 @@ import type { RPCSchema } from 'electrobun/bun'
 //
 // 统一信封:每个 request 的 params 都是 { args: unknown[] }(渲染层调用参数原样打包),
 // response 都是 { result: unknown }(主进程 handler 返回值原样回传)。这样 bridge 与渲染 adapter
-// 都能用「单一通用形状」机械地把全部 28 个通道接上,无需为每通道写专属类型。
+// 都能用「单一通用形状」机械地把全部 30 个通道接上,无需为每通道写专属类型。
 // 强类型由 src/preload 的 Api(window.api 形状)在渲染 adapter 边界保证。
 type Req = { params: { args: unknown[] }; response: { result: unknown } }
 
-// 全部 28 个通道(与 src/main/ipc.ts 注册的 bridge.handle 通道一一对应)。
+// 全部 30 个通道(与 src/main/ipc.ts 注册的 bridge.handle 通道一一对应)。
 // 本里程碑重点验证:sources:list / source:get / index:get / sessions:get / refresh:run(含进度)。
 // 其余通道走同一信封,bridge 自动接线,可直接调用(非本次重点验证项)。
 export type ProdRPC = {
   bun: RPCSchema<{
     requests: {
       'sources:list': Req
+      'sources:refresh': Req
+      'host:canDetectWsl': Req
       'source:get': Req
       'source:set': Req
       'index:get': Req
@@ -64,7 +66,7 @@ export type ProdRPC = {
 
 // 渲染 adapter 与 bridge 都需要的通道清单(单一真相源,避免两处手抄漂移)。
 export const PROD_CHANNELS = [
-  'sources:list', 'source:get', 'source:set', 'index:get', 'sessions:get', 'refresh:run',
+  'sources:list', 'sources:refresh', 'host:canDetectWsl', 'source:get', 'source:set', 'index:get', 'sessions:get', 'refresh:run',
   'check:updates', 'refresh:project',
   'fs:list', 'fs:mkdir', 'move:preview', 'move:execute', 'moves:list', 'move:undo',
   'trash:usage', 'trash:purge', 'history:plan', 'history:reconcile', 'history:listRewrites',

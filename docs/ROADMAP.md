@@ -6,6 +6,14 @@
 
 核心功能(移动 / 历史对账 / 归档还原)与**双运行时**(Bun+Electrobun 默认 / Node+Electron 兼容)均已落地并发布 **v1.0.0**;两运行时共用核心、经构建期分流、功能对等。项目已改名 **`cc-session-manager-gui`**(原 `cc-move-session`,反映其已从「移动」长成完整会话管理 GUI),旧数据自动迁移。后续主要是遗留实测、打磨与更宏大的蓝图。
 
+## 🚧 Windows host 检测运行中的 WSL 作为数据源(2026-06-22)
+
+补齐多源探测的对称方向:本工具作为 `.exe` 跑在 Windows host 上时,检测**当前运行中**的 WSL 发行版并接入为完整数据源(设计经两轮对抗审查收敛,见 `specs/2026-06-22-wsl-source-from-windows-host-design.md`)。约束:移动/归档恢复默认 Windows→Windows、Linux/Mac→Linux/Mac 不可跨切(由 `osFamily` 产品规则 + `fsAnchor` 技术安全双层承载)。
+
+- ✅ **Phase 1 — 异步探测 + 扫描(读)**:`Source` 加三个正交不变量 `osFamily`(OS 家族,承载用户「Windows→Windows、posix→posix」规则)/ `fsAnchor`(物理文件系统身份,rename 技术安全)/ `claudeHomeCwd`(POSIX 会话视角);`sources.ts` 纯函数 `wslPathToUnc`/`buildWslSources`/`parseWslListVerbose`(三分:unc 原名 / id=`wsl-<base>-<hash>` 恒带原名 hash 防跨会话漂移 / label;distro/HOME 进 UNC 前结构白名单含零宽同形字符防穿越)+ 异步 wrapper(`wsl --list --verbose` UTF-16LE+BOM、WSL2-only、从右解析含空格名;`wsl --exec` UTF-8 探默认用户 HOME,回退枚举 `/home/*` 防 root 漏源;单次 + 聚合超时);探测**异步化**移出同步启动路径(防卡死),经 `sources:refresh` async request/response 并入(in-place,活动源消失则回落 activeId),前端挂载自动调 + win32 恒显「重新检测源」入口(`host:canDetectWsl`)+ 防重入;`Env` 投影 osFamily/fsAnchor/claudeHomeCwd。经两轮代码对抗审查收敛(id 漂移/含空格漏源/activeId 悬挂/osFamily 误删等修复)。纯函数注入式单测,全量 **164 测试通过、tsc 归零**。
+- 🔜 **Phase 1 真机验证(Windows host)**:双运行时各验 `wsl.exe` spawn + UTF-16LE 解码(Bun+Windows 单列探针);WSL 源自动出现 + 切源扫描出真实会话;historyReconciler/scanWorker 在 UNC 上不冻结、可中断;默认用户=root 的最小读可行性。
+- 🔜 **Phase 2 — WSL 活动源内移动 / 归档(写)**:以重设计的 Windows 真机 spike 为门槛(rename 同 share 错误码矩阵 / symlink 读写 4 格 / root-owned ownership / 完整破坏序列);删除 mover 的 homedir 静默回退(env 必填);写后端 fs-facade 逐行覆盖 mover+archiver+fsMove+claudeJson+historyJsonl+tarPack 全部对源 fs 写(含 undo/恢复路径);跨源守卫双层(osFamily 同族 + fsAnchor 同 device)默认拒绝;自引用守卫/fsBrowser 锚点改 POSIX claudeHomeCwd。
+
 ## ✅ 改名 cc-session-manager-gui(2026-06-19)
 
 旧名 `cc-move-session` 只描述「移动」,已不符;统一更名 `cc-session-manager-gui` 并附**自动数据迁移**(下次启动幂等执行,既有移动/归档/还原历史不丢):

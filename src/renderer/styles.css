@@ -50,6 +50,8 @@ button.primary:disabled { background: #b9c6e6; cursor: not-allowed; }
 .sourcebar .src { background: #374151; color: #e5e7eb; border: 1px solid #4b5563; padding: 3px 12px; border-radius: 5px; cursor: pointer; }
 .sourcebar .src.sel { background: #2563eb; border-color: #2563eb; color: #fff; }
 .sourcebar .src:disabled { opacity: .45; cursor: not-allowed; }
+.sourcebar .src-refresh { background: transparent; color: #93c5fd; border: 1px solid #3b4b63; padding: 3px 10px; border-radius: 5px; cursor: pointer; font-size: 12px; }
+.sourcebar .src-refresh:disabled { opacity: .55; cursor: progress; }
 .src-hint { margin-left: auto; opacity: .55; }
 .trash-summary { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #444; margin: 4px 0 10px; }
 .hist-actions { display: flex; gap: 6px; }

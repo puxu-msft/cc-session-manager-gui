@@ -40,7 +40,7 @@
 
 - `ipc.ts` — **IPC 契约服务端**:`registerIpc(bridge: BridgeServer, runner?: ScanRunner)`,全部通道经注入的 `bridge.handle('<channel>', (ctx, …args) => …)` 注册(不依赖 electron);进度经 `ctx.emit('refresh:progress', …)`;`scanRunner` 可注入(默认 `ElectronScanRunner`);启动即 `reconcile`/`archiverReconcile` 收尾 pending。通道含 sources/index/sessions、`refresh:run`、`refresh:project`(单项目刷新)、`check:updates`(会话数据更新检测)、move/trash/history/archive 各操作。
 - `appState.ts` — 多源运行环境:`getEnv()` 返回当前活动源的 `Env`(独立 `Db` + 该源 projects/claude.json/trash/archive/backups 路径);每源一套 `index-<id>.db`;userData 路径经注入的 `Paths`(`setPaths`)、DB 创建经注入的 `dbFactory`(`setDbFactory`),**不再直接依赖 electron 或 better-sqlite3**;含旧单库 `index.db → index-local.db` 与项目改名(见 `migrateRename.ts`)两类一次性迁移。
-- `sources.ts` — 数据源探测:一个源=一套某家目录下的 `.claude`;WSL 下探测 Linux 侧 + Windows 侧(经 `cmd.exe` 取 `%USERPROFILE%`,失败则扫 `/mnt/c/Users`)两套,各自独立。
+- `sources.ts` — 数据源探测与模型:一个源=一套某家目录下的 `.claude`,带三个正交不变量 `osFamily`(OS 家族,承载「Windows→Windows、posix→posix」移动规则;不可由 anchor 推导——Windows-反向源经 `/mnt/c` 但 osFamily=windows)+ `fsAnchor`(物理文件系统身份:本机=claudeHome、远程 WSL=`\\wsl.localhost\<distro>`,rename 技术安全)+ `claudeHomeCwd`(POSIX 会话视角,供自引用守卫/reRoot)。两个方向:**WSL 内**反向探测 Windows 侧(经 `cmd.exe` 取 `%USERPROFILE%`/扫 `/mnt/c/Users`);**Windows host 上**(`detectWslSourcesFromWindows`,经 `sources:refresh` 异步触发,不在同步启动路径)枚举运行中的 WSL2 发行版(`wsl --list --verbose`,UTF-16LE)、`wsl --exec` 探默认用户 HOME(UTF-8,回退枚举 `/home/*` 防 root 漏源)、经 UNC `\\wsl.localhost` 读;`buildWslSources` 纯函数三分(unc 原名/id sanitized 恒带 hash 去碰撞/label)。设计见 `specs/2026-06-22-wsl-source-from-windows-host-design.md`。
 - `refresh.ts` — `applyScanToIndex(db, scan, existing)`:刷新落库的**纯函数**(算 diff → 事务内 upsert/删除),供 IPC 与集成测试共用(逻辑与 UI 分离的范例)。
 - `scanWorker.ts` — Electron 的 `worker_threads` 扫描线程入口(由 `ElectronScanRunner` 拉起);Electrobun 用独立预构建的 `src/bun/scanWorker.ts`。
 - `trash.ts` — 回收区占用统计与单条/全部清理。
@@ -104,7 +104,7 @@ schema v3,9 张表:`projects` / `sessions`(索引镜像;真相永远是磁盘 js
 | 历史 JSONL 对账 | `core/{historyJsonl,historyReconciler}.ts` | `specs/2026-06-16-history-jsonl-reconciler-design.md` |
 | 归档/还原 | `core/{archiver,tarPack}.ts` | `specs/2026-06-17-session-archive-restore-design.md` |
 | 双运行时(契约/实现/分流) | `platform/contract.ts`、`platform/{electron,electrobun}/**`、`src/bun/**`、`app/bootstrap.ts`、`db/{repository,driver}.ts`、`electrobun.config.ts` | `specs/2026-06-17-dual-runtime-electrobun-electron-design.md` + [electrobun-dev-guide.md](electrobun-dev-guide.md) |
-| 多源 / WSL | `main/{appState,sources}.ts` | README「## 数据源(WSL)」 |
+| 多源 / WSL | `main/{appState,sources}.ts` | README「## 数据源(WSL)」 + `specs/2026-06-22-wsl-source-from-windows-host-design.md` |
 
 ---
 

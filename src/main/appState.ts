@@ -1,7 +1,7 @@
 import { join, dirname } from 'node:path'
 import { mkdirSync, existsSync, renameSync } from 'node:fs'
 import type { Db } from './db/db'
-import { detectSources, type Source } from './sources'
+import { detectSources, detectWslSourcesFromWindows, type Source } from './sources'
 import type { Paths } from './platform/contract'
 import { migrateUserData, migrateSourceData } from './migrateRename'
 
@@ -28,6 +28,23 @@ function userDataDir(): string {
 export function listSources(): Source[] {
   if (!sources) sources = detectSources()
   return sources
+}
+
+// 异步重探数据源:Windows host 上枚举运行中的 WSL 发行版并 in-place 并入缓存(不整体重赋值,
+// 否则 activeId/dbs Map 失配)。由前端经 sources:refresh 调用(挂载时 + 手动按钮),不在同步启动路径触发。
+export async function refreshSources(): Promise<Source[]> {
+  const arr = listSources() // 确保 local 缓存已初始化
+  if (process.platform === 'win32') {
+    let wsl: Source[] = []
+    try { wsl = await detectWslSourcesFromWindows() } catch { wsl = [] }
+    // in-place:先移除旧的 wsl-* 源,再并入最新探测结果;保留 local,不重建数组。
+    for (let i = arr.length - 1; i >= 0; i--) if (arr[i].id.startsWith('wsl-')) arr.splice(i, 1)
+    arr.push(...wsl)
+    // 活动源可能是一个本次已消失的 wsl-* 源:回落到 local,避免 activeId 悬挂致
+    // getActiveSourceId() 与 activeSource() 失配(前端高亮错位 + getEnv 静默打在错误源上)。
+    if (activeId && !arr.some((s) => s.id === activeId)) activeId = arr[0].id
+  }
+  return arr
 }
 
 export function getActiveSourceId(): string {
@@ -70,12 +87,12 @@ export function migrateLegacyLocalDb(dir: string): void {
   }
 }
 
-export interface Env { db: Db; projectsRoot: string; claudeJsonPath: string; trashRoot: string; historyJsonlPath: string; archiveRoot: string; backupsRoot: string }
+export interface Env { db: Db; projectsRoot: string; claudeJsonPath: string; trashRoot: string; historyJsonlPath: string; archiveRoot: string; backupsRoot: string; osFamily: Source['osFamily']; fsAnchor: string; claudeHomeCwd: string }
 
-// 返回当前活动源的运行环境(独立 DB + 该源的 projects/claude.json/trash 路径)。
+// 返回当前活动源的运行环境(独立 DB + 该源的 projects/claude.json/trash 路径 + osFamily/fsAnchor/claudeHomeCwd 守卫锚点)。
 export function getEnv(): Env {
   const s = activeSource()
-  return { db: dbFor(s.id), projectsRoot: s.projectsRoot, claudeJsonPath: s.claudeJsonPath, trashRoot: s.trashRoot, historyJsonlPath: s.historyJsonlPath, archiveRoot: s.archiveRoot, backupsRoot: s.backupsRoot }
+  return { db: dbFor(s.id), projectsRoot: s.projectsRoot, claudeJsonPath: s.claudeJsonPath, trashRoot: s.trashRoot, historyJsonlPath: s.historyJsonlPath, archiveRoot: s.archiveRoot, backupsRoot: s.backupsRoot, osFamily: s.osFamily, fsAnchor: s.fsAnchor, claudeHomeCwd: s.claudeHomeCwd }
 }
 
 // 退出时关闭所有已打开的源 DB。
