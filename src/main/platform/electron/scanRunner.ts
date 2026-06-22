@@ -17,7 +17,7 @@ export class ElectronScanRunner implements ScanRunner {
     this.currentWorker?.terminate()
     return new Promise<ScanOutcome>((resolve, reject) => {
       let settled = false
-      const w = new Worker(join(__dirname, 'scanWorker.js'), { workerData: { projectsRoot: input.projectsRoot, existingRows: input.existingRows } })
+      const w = new Worker(join(__dirname, 'scanWorker.js'), { workerData: { projectsRoot: input.projectsRoot, existingRows: input.existingRows, cwdHostMap: input.cwdHostMap } })
       this.currentWorker = w
       w.on('message', (m: { type: string; done?: number; total?: number; path?: string; projects?: ProjectMeta[]; sessions?: SessionMeta[]; message?: string }) => {
         if (m.type === 'progress') {

@@ -8,10 +8,12 @@ import { encodePath } from './pathCodec'
 // - reuse:给定 (sessionId, size, mtime),若该文件自上次索引未变则返回缓存的 SessionMeta,从而跳过昂贵的逐行流式解析;返回 null 则照常解析。
 // - onProgress:每处理完一个文件回调 (已完成数, 总数, 当前文件路径),用于 UI 进度上报。
 // - signal:AbortSignal,用于在退出或用户取消时中断进行中的扫描(在文件边界检查)。
+// - hostPath:把会话 POSIX cwd 映射到宿主可访问路径再判存在(远程 WSL 源用,见 pathCodec.hostPathForCwd);缺省为恒等(本机源)。
 export interface ScanOptions {
   reuse?: (sessionId: string, sizeBytes: number, mtime: number) => SessionMeta | null
   onProgress?: (done: number, total: number, path: string) => void
   signal?: AbortSignal
+  hostPath?: (cwd: string) => string
 }
 
 function abortError(): Error {
@@ -57,8 +59,9 @@ export async function scanAll(projectsRoot: string, opts: ScanOptions = {}): Pro
     if (!s.cwd) continue
     ;(byProject.get(s.cwd) ?? byProject.set(s.cwd, []).get(s.cwd)!).push(s)
   }
+  const hostPath = opts.hostPath ?? ((c: string) => c)
   const projects: ProjectMeta[] = [...byProject.entries()].map(([cwd, ss]) => ({
-    projectPathAbs: cwd, folderName: ss[0].folderName, existsOnDisk: existsSync(cwd), inClaudeJson: false,
+    projectPathAbs: cwd, folderName: ss[0].folderName, existsOnDisk: existsSync(hostPath(cwd)), inClaudeJson: false,
     sessionCount: ss.length, totalSizeBytes: ss.reduce((a, s) => a + s.sizeBytes, 0),
     lastActivityAt: ss.map((s) => s.lastActivityAt).filter(Boolean).sort().pop() ?? null,
   }))
@@ -110,8 +113,9 @@ export async function scanProject(projectsRoot: string, projectPathAbs: string, 
 
   const own = parsed.filter((s) => s.cwd === projectPathAbs)
   if (own.length === 0) return { project: null, sessions: [] }
+  const hostPath = opts.hostPath ?? ((c: string) => c)
   const project: ProjectMeta = {
-    projectPathAbs, folderName: own[0].folderName, existsOnDisk: existsSync(projectPathAbs), inClaudeJson: false,
+    projectPathAbs, folderName: own[0].folderName, existsOnDisk: existsSync(hostPath(projectPathAbs)), inClaudeJson: false,
     sessionCount: own.length, totalSizeBytes: own.reduce((a, s) => a + s.sizeBytes, 0),
     lastActivityAt: own.map((s) => s.lastActivityAt).filter(Boolean).sort().pop() ?? null,
   }

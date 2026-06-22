@@ -1,6 +1,7 @@
 import { parentPort, workerData } from 'node:worker_threads'
 import type { ProjectMeta, SessionMeta } from '@shared/types'
 import { scanAll } from '../../core/scanner'
+import { hostPathForCwd, type CwdHostMap } from '../../core/pathCodec'
 import { buildReuse, type SessionRowShape } from '../../db/rowMap'
 
 // Electrobun(Bun)扫描 worker 的执行体。
@@ -13,14 +14,15 @@ import { buildReuse, type SessionRowShape } from '../../db/rowMap'
 //
 // 与 Electron 的 src/main/scanWorker.ts 行为等价:进度经 postMessage('progress') 上报,
 // 完成发 'done',异常发 'error';中断由主线程 worker.terminate() 实现(无需协作式标志)。
-export interface ScanWorkerInput { projectsRoot: string; existingRows: SessionRowShape[] }
+export interface ScanWorkerInput { projectsRoot: string; existingRows: SessionRowShape[]; cwdHostMap?: CwdHostMap }
 
 export async function runScanWorker(): Promise<void> {
-  const { projectsRoot, existingRows } = workerData as ScanWorkerInput
+  const { projectsRoot, existingRows, cwdHostMap } = workerData as ScanWorkerInput
   try {
     const result = await scanAll(projectsRoot, {
       reuse: buildReuse(existingRows),
       onProgress: (done, total, path) => parentPort!.postMessage({ type: 'progress', done, total, path }),
+      hostPath: (cwd) => hostPathForCwd(cwd, cwdHostMap),
     })
     const projects: ProjectMeta[] = result.projects
     const sessions: SessionMeta[] = result.sessions

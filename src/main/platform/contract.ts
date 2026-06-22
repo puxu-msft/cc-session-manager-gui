@@ -1,5 +1,6 @@
 import type { ProjectMeta, SessionMeta } from '@shared/types'
 import type { Db } from '../db/repository'
+import type { CwdHostMap } from '../core/pathCodec'
 
 // 运行时抽象契约。Electron 与(将来的)Electrobun 各自提供实现,核心装配只依赖这些接口。
 
@@ -9,7 +10,9 @@ export interface Paths {
 }
 
 export interface ScanOutcome { projects: ProjectMeta[]; sessions: SessionMeta[]; aborted: boolean }
-export interface ScanInput { projectsRoot: string; existingRows: unknown[] }
+// cwdHostMap:把会话 cwd 映射到宿主可访问路径的描述符(异 namespace 源用,见 pathCodec.hostPathForCwd);
+// 否则 existsSync 会对异 namespace 路径(Windows host 上的 /home/…、WSL 内的 C:\…)恒判不存在。
+export interface ScanInput { projectsRoot: string; existingRows: unknown[]; cwdHostMap?: CwdHostMap }
 
 // 后台全量扫描运行器。Electron 用 node:worker_threads;Electrobun 将提供 Bun 实现。
 // 进度经 onProgress 回调上报(与具体 IPC/bridge 解耦),由调用方接到各自的「主→渲染」通道,

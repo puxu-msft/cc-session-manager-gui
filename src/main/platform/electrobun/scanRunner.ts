@@ -28,7 +28,7 @@ export class ElectrobunScanRunner implements ScanRunner {
     return new Promise<ScanOutcome>((resolve, reject) => {
       let settled = false
       const w = new Worker(WORKER_ENTRY, {
-        workerData: { projectsRoot: input.projectsRoot, existingRows: input.existingRows },
+        workerData: { projectsRoot: input.projectsRoot, existingRows: input.existingRows, cwdHostMap: input.cwdHostMap },
       })
       this.currentWorker = w
       w.on('message', (m: { type: string; done?: number; total?: number; path?: string; projects?: ProjectMeta[]; sessions?: SessionMeta[]; message?: string }) => {

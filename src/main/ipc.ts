@@ -7,6 +7,7 @@ import { ElectronScanRunner } from './platform/electron/scanRunner'
 import { getEnv, listSources, refreshSources, getActiveSourceId, setActiveSourceId } from './appState'
 import { applyScanToIndex, applyProjectScan } from './refresh'
 import { scanProject } from './core/scanner'
+import { hostPathForCwd, cwdHostMapFor } from './core/pathCodec'
 import { detectChanges } from './core/updates'
 import { listDir } from './core/fsBrowser'
 import { trashUsage, purgeMove, purgeAllTrash } from './trash'
@@ -52,7 +53,7 @@ export function registerIpc(bridge: BridgeServer, runner?: ScanRunner, updater?:
     const env = getEnv()
     const existing = env.db.getAllSessionRows()
     const { projects, sessions, aborted } = await scanRunner.run(
-      { projectsRoot: env.projectsRoot, existingRows: existing },
+      { projectsRoot: env.projectsRoot, existingRows: existing, cwdHostMap: cwdHostMapFor(process.platform === 'win32', env.osFamily, env.fsAnchor) },
       (done, total, path) => ctx.emit('refresh:progress', { done, total, path }),
     )
     if (aborted) {
@@ -70,7 +71,7 @@ export function registerIpc(bridge: BridgeServer, runner?: ScanRunner, updater?:
   // 单项目刷新:只重扫该项目文件夹并落库,返回最新项目列表与该项目的 diff。
   bridge.handle('refresh:project', async (_ctx, projectPathAbs: string) => {
     const env = getEnv()
-    const scan = await scanProject(env.projectsRoot, projectPathAbs)
+    const scan = await scanProject(env.projectsRoot, projectPathAbs, { hostPath: (cwd) => hostPathForCwd(cwd, cwdHostMapFor(process.platform === 'win32', env.osFamily, env.fsAnchor)) })
     const diff = applyProjectScan(env.db, projectPathAbs, scan)
     return { project: scan.project, projects: env.db.getProjects(), diff }
   })

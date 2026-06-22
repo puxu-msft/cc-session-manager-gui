@@ -56,6 +56,9 @@
 ### 5.5 漏源防御:默认用户可能是 root
 `echo $HOME` 给默认用户。服务器型镜像默认 root → `/root/.claude`,而人类用户 `.claude` 在 `/home/xp` 会被静默漏掉。**裁定**:默认 HOME 无 `.claude/projects` 时,回退枚举 `/home/*` 取存在者;HOME 落 `/mnt/*`(家目录在 Windows 盘)→ 跳过记日志(属 Windows 源域,接入违反「不跨平台」)。
 
+### 5.5b 会话 cwd 的「宿主可访问路径」映射(真机发现的读正确性 bug)
+扫描时 `existsOnDisk` 用 `existsSync(cwd)` 判存在,但 `cwd` 是**会话所属 OS 的 namespace 路径**,在异 namespace 宿主上恒判不存在 → UI 误报「路径已不存在」。两个对称实例:Windows host 上 WSL 源的 POSIX cwd `/home/…`;WSL 内 Windows 源的 cwd `C:\…`。**裁定**:由 `cwdHostMapFor(hostIsWindows, osFamily, fsAnchor)`(纯函数,**用 osFamily 判别**——再次印证 osFamily 不可由 anchor 推导)产出可序列化映射描述符 `CwdHostMap`(`identity` / `posixToUnc` / `winToMnt`),经 `ScanInput.cwdHostMap` 传入扫描 worker,`hostPathForCwd(cwd, map)` 把 cwd 映射到宿主可访问路径(`/home/x`→`\\wsl.localhost\<distro>\home\x`;`C:\x`→`/mnt/c/x`)再 `existsSync`。本机源 `identity` 保持原行为。
+
 ### 5.6 安全:distro/HOME 进 UNC 前结构校验
 distro 名是不可信输入(WSL 名允许空格/括号/Unicode,`wsl --import` 可起任意名)。`execFileSync` 不过 shell,**命令注入面安全**(distro 作单个 argv);风险在 **UNC 路径段**:`Ubuntu\..\..\..\c$` 经 `path.win32.normalize` 可穿越到宿主管理共享。**裁定**:distro 进 UNC 前过结构白名单(拒 `\` `/` `..` `$` 控制符/前后空白/可疑 Unicode);`probeWslHome` 返回值校验为绝对 POSIX(无 `..`/盘符);`wslPathToUnc` `normalize` 后断言前缀仍 `\\wsl.localhost\<single-segment>\`。
 
