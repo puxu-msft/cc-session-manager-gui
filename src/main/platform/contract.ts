@@ -44,6 +44,15 @@ export interface WindowHost {
   createMainWindow(): void
 }
 
+// 应用版本自动更新宿主(Electron=electron-updater;Electrobun 不接,自带 bsdiff 机制)。
+// 隔离 electron-updater 这个 Electron 专属依赖。事件经各自「主→渲染」通道推送:Electron 实现直接
+// webContents.send('app:update', e)——因 autoUpdater 事件无调用方上下文,不能复用绑 event.sender 的
+// BridgeContext.emit。Electrobun 入口不传此端口(Platform.updater 缺省即「无 Electron 更新」)。
+export interface UpdaterHost {
+  checkForUpdates(): void
+  quitAndInstall(): void
+}
+
 // 一套运行时平台实现的集合,交给 bootstrap 装配。
 export interface Platform {
   appHost: AppHost
@@ -55,6 +64,8 @@ export interface Platform {
   // Electrobun 传入基于独立预构建 worker bundle 的 worker_threads 实现(electrobun 打包不产独立 worker
   // chunk,故 worker 入口预构建成不含 electrobun 的 bundle 单独加载,避免框架顶层副作用抢占端口)。
   scanRunner?: ScanRunner
+  // 应用版本自动更新宿主。可选:仅 Electron 传入(electron-updater);Electrobun 不传(自带 bsdiff)。
+  updater?: UpdaterHost
 }
 
 // 预编译语句的最小抽象:run/get/all 同时支持命名参数对象(run({a:1}))与位置参数(run(1,2))两种调用风格。

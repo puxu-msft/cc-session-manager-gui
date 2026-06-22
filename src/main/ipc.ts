@@ -2,9 +2,9 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import type { ProjectMeta } from '@shared/types'
-import type { BridgeServer, ScanRunner } from './platform/contract'
+import type { BridgeServer, ScanRunner, UpdaterHost } from './platform/contract'
 import { ElectronScanRunner } from './platform/electron/scanRunner'
-import { getEnv, listSources, getActiveSourceId, setActiveSourceId } from './appState'
+import { getEnv, listSources, refreshSources, getActiveSourceId, setActiveSourceId } from './appState'
 import { applyScanToIndex, applyProjectScan } from './refresh'
 import { scanProject } from './core/scanner'
 import { detectChanges } from './core/updates'
@@ -21,12 +21,20 @@ export function abortCurrentScan(): void {
   scanRunner.terminate()
 }
 
-export function registerIpc(bridge: BridgeServer, runner?: ScanRunner): void {
+export function registerIpc(bridge: BridgeServer, runner?: ScanRunner, updater?: UpdaterHost): void {
   if (runner) scanRunner = runner
   reconcile(getEnv()) // 启动时收尾当前活动源的 pending 移动
   archiverReconcile(getEnv()) // 启动时收尾当前活动源的 pending 归档/还原
 
-  bridge.handle('sources:list', () => listSources().map((s) => ({ id: s.id, label: s.label, projectsRoot: s.projectsRoot, exists: s.exists })))
+  const projectSource = (s: { id: string; label: string; projectsRoot: string; exists: boolean }) =>
+    ({ id: s.id, label: s.label, projectsRoot: s.projectsRoot, exists: s.exists })
+  bridge.handle('sources:list', () => listSources().map(projectSource))
+  // 异步重探(Windows host 枚举运行中的 WSL 发行版并入)。前端挂载时自动调一次 + 「重新检测源」按钮。
+  // async handler:await execFile 异步探测(不阻塞主进程 event loop),直接 request/response 返回完整列表。
+  bridge.handle('sources:refresh', async () => (await refreshSources()).map(projectSource))
+  // 宿主是否可能有 WSL(仅 win32)。供前端决定是否常驻显示「重新检测源」入口,
+  // 避免「WSL 未运行时源条消失 → 想重探却无入口」。
+  bridge.handle('host:canDetectWsl', () => process.platform === 'win32')
   bridge.handle('source:get', () => getActiveSourceId())
   bridge.handle('source:set', (_ctx, id: string) => {
     abortCurrentScan()
@@ -110,5 +118,10 @@ export function registerIpc(bridge: BridgeServer, runner?: ScanRunner): void {
   bridge.handle('archive:undoRestore', (_ctx, restoreId: number) => { undoRestore(restoreId, getEnv()); return true })
   bridge.handle('archive:deleteVersion', (_ctx, versionId: number) => { deleteVersion(versionId, getEnv()); return true })
   bridge.handle('archive:usage', () => archiveUsage(getEnv()))
+
+  // 应用版本自动更新(electron-updater):触发安装已下载更新并重启。
+  // 注意:这是「应用程序版本」更新,与上方 check:updates(会话数据变更检测)无关。
+  // Electrobun 不传 updater(自带 bsdiff 自更新),此 handler 即 no-op。
+  bridge.handle('app:update:install', () => { updater?.quitAndInstall(); return true })
 }
 

@@ -12,8 +12,11 @@ export function bootstrap(platform: Platform): void {
   void platform.appHost.whenReady().then(() => {
     setPaths(platform.paths)
     setDbFactory(platform.dbFactory)
-    registerIpc(platform.bridge, platform.scanRunner)
+    registerIpc(platform.bridge, platform.scanRunner, platform.updater)
     platform.windowHost.createMainWindow()
+    // 窗口创建后再查更新:打包态才实际触发(electron-updater 内部 guard isPackaged),
+    // 事件经主窗口 webContents.send 推送,故须在窗口存在之后。Electrobun 不传 updater → no-op。
+    platform.updater?.checkForUpdates()
   })
   platform.appHost.onWindowAllClosed(() => {
     if (process.platform !== 'darwin') platform.appHost.quit()

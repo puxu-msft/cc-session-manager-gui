@@ -68,6 +68,16 @@ export interface RefreshProgress { done: number; total: number; path: string }
 // 轻量更新检测结果(check:updates):会话数据相对索引的变化计数 + 受影响项目路径(供 UI 显示 badge)。
 export interface UpdateSummary { added: number; changed: number; removed: number; changedProjects: string[] }
 
+// 应用版本自动更新事件(electron-updater,主→渲染推送 'app:update')。
+// 注意:这是「应用程序版本」更新,与上面的 UpdateSummary(会话数据变更检测)完全无关,勿混淆。
+// Electrobun 不接此机制(自带 bsdiff 自更新),其渲染适配器对应方法为 no-op。
+export interface AppUpdateEvent {
+  kind: 'checking' | 'available' | 'not-available' | 'progress' | 'downloaded' | 'error'
+  version?: string
+  percent?: number
+  message?: string
+}
+
 // 回收区占用:总字节 + 每条移动(以 moveId 为 key)的备份字节
 export interface TrashUsage { total: number; byMove: Record<string, number> }
 

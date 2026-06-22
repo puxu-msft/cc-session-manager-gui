@@ -29,7 +29,7 @@ export function App() {
   const [showReconcile, setShowReconcile] = useState(false)
   const [showArchive, setShowArchive] = useState(false)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
-  useEffect(() => { st.loadSources(); st.loadIndex(); st.browse(''); st.loadReconcilePending(); st.checkUpdates() }, [])
+  useEffect(() => { st.loadCanDetectWsl(); st.loadSources().then(() => st.refreshSources()); st.loadIndex(); st.browse(''); st.loadReconcilePending(); st.checkUpdates() }, [])
 
   const toggle = (id: string) => {
     const next = new Set(st.selectedSessions)
@@ -75,7 +75,17 @@ export function App() {
 
   return (
     <div className="app">
-      {st.sources.length > 1 && (
+      {st.appUpdate && ['available', 'progress', 'downloaded', 'error'].includes(st.appUpdate.kind) && (
+        <p className="notice updatebar">
+          {st.appUpdate.kind === 'available' && `发现新版本 ${st.appUpdate.version ?? ''},正在后台下载…`}
+          {st.appUpdate.kind === 'progress' && `下载更新中… ${st.appUpdate.percent ?? 0}%`}
+          {st.appUpdate.kind === 'downloaded' && (
+            <>新版本 {st.appUpdate.version ?? ''} 已就绪。<button className="src" onClick={() => st.installUpdate()}>安装并重启</button></>
+          )}
+          {st.appUpdate.kind === 'error' && `应用更新失败:${st.appUpdate.message ?? ''}`}
+        </p>
+      )}
+      {(st.canDetectWsl || st.sources.length > 1 || st.detectingSources) && (
         <div className="sourcebar">
           <span className="src-label">数据源</span>
           {st.sources.map((s) => (
@@ -89,6 +99,16 @@ export function App() {
               {s.label}{s.exists ? '' : '(无)'}
             </button>
           ))}
+          {st.canDetectWsl && (
+            <button
+              className="src-refresh"
+              disabled={st.detectingSources || st.refreshing}
+              onClick={() => st.refreshSources()}
+              title="重新检测运行中的 WSL 发行版"
+            >
+              {st.detectingSources ? '检测中…' : '重新检测源'}
+            </button>
+          )}
           <span className="src-hint">各数据源使用独立索引</span>
         </div>
       )}

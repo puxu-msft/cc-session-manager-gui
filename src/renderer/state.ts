@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react'
-import type { MovePreview, RefreshProgress, SourceInfo, UpdateSummary } from '@shared/types'
+import { useState, useCallback, useRef, useEffect } from 'react'
+import type { MovePreview, RefreshProgress, SourceInfo, UpdateSummary, AppUpdateEvent } from '@shared/types'
 import { reconcileSummary } from './lib/reconcileView'
 
 export function useAppState() {
@@ -17,10 +17,35 @@ export function useAppState() {
   const [activeSource, setActiveSource] = useState<string>('')
   const [reconcilePending, setReconcilePending] = useState(0)
   const [updates, setUpdates] = useState<UpdateSummary | null>(null)
+  // 应用版本自动更新事件(electron-updater;Electrobun 下适配器为 no-op,永不触发)。
+  const [appUpdate, setAppUpdate] = useState<AppUpdateEvent | null>(null)
+  useEffect(() => {
+    const off = window.api.onUpdateEvent((e) => setAppUpdate(e))
+    return () => { off() }
+  }, [])
+  const installUpdate = useCallback(() => window.api.installUpdate(), [])
 
   const loadSources = useCallback(async () => {
     setSources(await window.api.listSources())
     setActiveSource(await window.api.getSource())
+  }, [])
+  // 异步重探数据源(Windows host 枚举运行中的 WSL 发行版)。挂载时自动调一次 + 「重新检测源」按钮。
+  const [detectingSources, setDetectingSources] = useState(false)
+  const [canDetectWsl, setCanDetectWsl] = useState(false)
+  const detectingRef = useRef(false)
+  const refreshSources = useCallback(async () => {
+    if (detectingRef.current) return // 防重入叠加(挂载自动调 + 手动按钮可能并发)
+    detectingRef.current = true
+    setDetectingSources(true)
+    try {
+      setSources(await window.api.refreshSources())
+      // 活动源可能因目标发行版停机而消失,主进程已回落 activeId;同步前端高亮避免错位。
+      setActiveSource(await window.api.getSource())
+    } catch { /* wsl 不可用等,忽略,保留已有源 */ }
+    finally { detectingRef.current = false; setDetectingSources(false) }
+  }, [])
+  const loadCanDetectWsl = useCallback(async () => {
+    try { setCanDetectWsl(await window.api.canDetectWsl()) } catch { setCanDetectWsl(false) }
   }, [])
   const switchSource = useCallback(async (id: string) => {
     const r = await window.api.setSource(id)
@@ -65,5 +90,5 @@ export function useAppState() {
     try { const p = await window.api.planHistory(); setReconcilePending(reconcileSummary(p).opsLines) } catch { setReconcilePending(0) }
   }, [])
 
-  return { projects, selectedProject, sessions, selectedSessions, setSelectedSessions, fsPath, fsListing, targetDir, setTargetDir, preview, setPreview, refreshing, progress, sources, activeSource, loadSources, switchSource, loadIndex, refresh, pickProject, browse, makeDir, reconcilePending, loadReconcilePending, updates, checkUpdates, refreshProject }
+  return { projects, selectedProject, sessions, selectedSessions, setSelectedSessions, fsPath, fsListing, targetDir, setTargetDir, preview, setPreview, refreshing, progress, sources, activeSource, loadSources, refreshSources, detectingSources, canDetectWsl, loadCanDetectWsl, switchSource, loadIndex, refresh, pickProject, browse, makeDir, reconcilePending, loadReconcilePending, updates, checkUpdates, refreshProject, appUpdate, installUpdate }
 }

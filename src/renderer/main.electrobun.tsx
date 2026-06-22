@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { Electroview } from 'electrobun/view'
-import type { RefreshProgress } from '@shared/types'
+import type { RefreshProgress, AppUpdateEvent } from '@shared/types'
 import { App } from './App'
 import './styles.css'
 
@@ -44,6 +44,8 @@ async function call<T>(channel: string, ...args: unknown[]): Promise<T> {
 // 与 src/preload/index.ts 的 api 一一对应(同名同参同返回)。
 const api = {
   listSources: () => call('sources:list'),
+  refreshSources: () => call('sources:refresh'),
+  canDetectWsl: () => call('host:canDetectWsl'),
   getSource: () => call('source:get'),
   setSource: (id: string) => call('source:set', id),
   getIndex: () => call('index:get'),
@@ -76,6 +78,10 @@ const api = {
     progressListeners.add(cb)
     return () => progressListeners.delete(cb)
   },
+  // 应用版本自动更新:Electrobun 不接 electron-updater(自带 bsdiff 自更新机制),
+  // 提供与 Electron preload 同形的 no-op,使共用 App/state 调用不报错。
+  installUpdate: () => Promise.resolve(true),
+  onUpdateEvent: (_cb: (e: AppUpdateEvent) => void) => () => {},
 }
 
 // 注入 window.api(替代 Electron 的 contextBridge.exposeInMainWorld)。

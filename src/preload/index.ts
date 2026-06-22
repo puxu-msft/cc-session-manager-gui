@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { RefreshProgress } from '@shared/types'
+import type { RefreshProgress, AppUpdateEvent } from '@shared/types'
 const api = {
   listSources: () => ipcRenderer.invoke('sources:list'),
+  refreshSources: () => ipcRenderer.invoke('sources:refresh'),
+  canDetectWsl: () => ipcRenderer.invoke('host:canDetectWsl'),
   getSource: () => ipcRenderer.invoke('source:get'),
   setSource: (id: string) => ipcRenderer.invoke('source:set', id),
   getIndex: () => ipcRenderer.invoke('index:get'),
@@ -34,6 +36,14 @@ const api = {
     const h = (_e: unknown, data: RefreshProgress) => cb(data)
     ipcRenderer.on('refresh:progress', h)
     return () => ipcRenderer.removeListener('refresh:progress', h)
+  },
+  // 应用版本自动更新(electron-updater):触发安装并重启。
+  installUpdate: () => ipcRenderer.invoke('app:update:install'),
+  // 订阅应用版本更新事件('app:update');返回取消订阅函数。与会话变更检测(checkUpdates)无关。
+  onUpdateEvent: (cb: (e: AppUpdateEvent) => void) => {
+    const h = (_e: unknown, data: AppUpdateEvent) => cb(data)
+    ipcRenderer.on('app:update', h)
+    return () => ipcRenderer.removeListener('app:update', h)
   },
 }
 contextBridge.exposeInMainWorld('api', api)
