@@ -8,8 +8,8 @@
 #
 # 触发 → 产物映射:
 #   workflow_dispatch tier=spike                         → spike:electrobun 打包验证(不发布)
-#   push tag v*                                          → 基础版:electrobun 便携 zip(无自更新)
-#   release published                                    → 完整版:默认仅 electrobun(zip + 自更新元数据)
+#   push tag v*                                          → 基础版:electrobun portable zip(解压即跑,无自更新)
+#   release published                                    → 完整版:默认仅 electrobun(portable zip + 自解压 Setup + 自更新元数据)
 #   workflow_dispatch tier∈{basic,full} runtime∈{electron,both} → electron 手动覆盖(nsis+zip+latest.yml)
 #
 # 分发件只走 GitHub Release 资产、逐文件上传;更新元数据(update.json / latest.yml / blockmap)一律
@@ -96,7 +96,10 @@ jobs:
         run: bun run bun:build:worker
       - name: Electrobun build (stable channel)
         run: bunx electrobun build --env=stable
-      # 基础版只上传便携 zip(无自更新);tag push 时 Release 可能尚不存在 → 幂等 create-or-upload。
+      # 从 stable 全量包 tar.zst 还原真应用目录,打成 portable zip(解压即跑,非自解压 Setup)。
+      - name: Pack portable zip
+        run: bun run scripts/pack-portable.mjs
+      # 基础版只上传 portable zip(无自更新);tag push 时 Release 可能尚不存在 → 幂等 create-or-upload。
       - name: Publish portable zip to Release
         shell: bash
         env:
@@ -105,12 +108,12 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          zips=(artifacts/stable-win-x64-*.zip)
+          zips=(artifacts/stable-win-x64-*-portable.zip)
           [ ${#zips[@]} -gt 0 ] || { echo "MISSING portable zip"; exit 1; }
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${zips[@]}" --clobber
           else
-            gh release create "$TAG" "${zips[@]}" --title "$TAG" --notes "electrobun 便携版(Windows x64)。解压运行 Setup.exe。"
+            gh release create "$TAG" "${zips[@]}" --title "$TAG" --notes "electrobun 便携版(Windows x64)。解压到任意位置,双击 bin\\launcher.exe 运行。"
           fi
 
   # ============ 完整版:release published → 默认仅 electrobun(zip + 自更新元数据)============
@@ -131,8 +134,11 @@ jobs:
         run: bun run bun:build:worker
       - name: Electrobun build (stable channel)
         run: bunx electrobun build --env=stable
-      # 完整版上传全部 electrobun 产物(便携 zip + 全量 tar.zst + update.json + 可能的 patch),
-      # 每个文件作为独立 Release 资产(自更新元数据绝不进聚合包)。
+      # 同基础版:从 tar.zst 打 portable zip。完整版 portable + Setup 并存(给用户两种方式)。
+      - name: Pack portable zip
+        run: bun run scripts/pack-portable.mjs
+      # 完整版上传全部产物:portable zip(解压即跑)+ 自解压 Setup.zip + 全量 tar.zst + update.json
+      # (+可能 patch)。portable 与 Setup 并存;更新元数据各为独立 Release 资产(绝不进聚合包)。
       - name: Publish full artifacts to Release
         shell: bash
         env:
@@ -146,7 +152,7 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${files[@]}" --clobber
           else
-            gh release create "$TAG" "${files[@]}" --title "$TAG" --notes "electrobun 完整版(Windows x64,含自更新)。"
+            gh release create "$TAG" "${files[@]}" --title "$TAG" --notes "electrobun 完整版(Windows x64):portable zip(解压即跑)+ Setup.zip(自解压安装,含自更新)。"
           fi
 
   # ============ Electron 手动覆盖:仅 workflow_dispatch runtime∈{electron,both} ============

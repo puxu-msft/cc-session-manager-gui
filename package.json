@@ -21,6 +21,7 @@
     "bun:build:worker": "bun run scripts/build-electrobun-worker.mjs",
     "bun:build": "bun run bun:build:worker && bunx electrobun build",
     "bun:dev": "bun run bun:build:worker && bunx electrobun dev",
+    "pack:portable": "bun run scripts/pack-portable.mjs",
     "test:bun": "bun run spike/probe-repository.ts && bun run spike/probe-sqlite.ts && bun run spike/probe-fsmove.ts && bun run spike/probe-paths.ts"
   },
   "build": {
