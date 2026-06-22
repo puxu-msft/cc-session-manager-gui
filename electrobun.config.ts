@@ -1,6 +1,7 @@
 import type { ElectrobunConfig } from 'electrobun'
 import type { BunPlugin } from 'bun'
 import { join } from 'node:path'
+import pkg from './package.json'
 
 // Bun 打包不读取 tsconfig 的 paths(electrobun CLI 在 node_modules 内调 Bun.build,cwd 不同),
 // 因此用一个解析插件把 @shared/* 映射到项目内 src/shared/*,使核心层的 '@shared/...' import 在
@@ -40,7 +41,8 @@ export default {
   app: {
     name: 'cc-session-manager-gui',
     identifier: 'com.local.cc-session-manager-gui',
-    version: '1.0.0',
+    // 版本单一真相源:取自 package.json,避免与 electron 侧(app.getVersion 读 package.json)漂移。
+    version: pkg.version,
   },
   build: {
     bun: {
