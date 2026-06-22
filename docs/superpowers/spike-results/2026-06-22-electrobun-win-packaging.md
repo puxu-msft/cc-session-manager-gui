@@ -31,26 +31,24 @@ electrobun build 只构建宿主平台(CLI `currentTarget` 写死宿主,`config.
 - `update.json` — 自更新元数据(version/hash/platform/arch)。
 - artifacts/ 加平台前缀后:`stable-win-x64-cc-session-manager-gui-Setup.zip`、`stable-win-x64-update.json`。
 
-## 待真实 Windows 桌面验证(CI 无头验不了 → 完整 GATE 仍未 GO)
+## 真实 Windows 桌面验证(用户实测)
 
-CI 只能验「打包链 + 产物结构」;以下功能项必须在真实 Windows 桌面手测,任一失败都可能推翻「默认切 electrobun」:
+CI 只能验「打包链 + 产物结构」;以下功能项在真实 Windows 桌面手测。**用户实测:spike artifact 可正常启动运行**——便携 zip 解压后运行 Setup.exe 自解压、应用起窗成功。
 
 | 项 | 说明 | 状态 |
 |----|------|------|
-| 起窗 | WebView2 运行期渲染(Win11 自带,旧系统需 Evergreen Runtime) | ⏳ 待验 |
-| 渲染层 + window.api | 渲染挂载 + RPC 往返(view:probe 探针回传) | ⏳ 待验 |
-| 全量扫描 | scanWorker 独立 bundle 加载 + 50000 端口规避(仅 Linux 实测过) | ⏳ 待验 |
-| zstd 归档 | zstdShim(Bun 内置 zstd Windows 版)跨运行时互读 | ⏳ 待验 |
-| WSL 源探测 | `detectWslSourcesFromWindows`(`wsl --list` UTF-16LE) | ⏳ 待验 |
-| 系统托盘 | Linux 用 libNativeWrapper.so appindicator;Windows 等价物未验 | ⏳ 待验 |
-
-桌面验证手法:下载 run 的 `spike-electrobun-win-x64` artifact → 内含 `stable-win-x64-cc-session-manager-gui-Setup.zip` → 解压运行 `Setup.exe` 自解压安装 → 启动应用,逐项核对上表。
+| 起窗 | WebView2 运行期渲染(Win11 自带,旧系统需 Evergreen Runtime) | ✓ 可运行 |
+| 渲染层 + window.api | 渲染挂载 + RPC 往返 | ✓ 可运行 |
+| 全量扫描 | scanWorker 独立 bundle 加载 + 50000 端口规避 | 随使用持续确认 |
+| zstd 归档 | zstdShim(Bun 内置 zstd Windows 版)跨运行时互读 | 随使用持续确认 |
+| WSL 源探测 | `detectWslSourcesFromWindows`(`wsl --list` UTF-16LE) | 随使用持续确认 |
+| 系统托盘 | Linux 用 libNativeWrapper.so appindicator;Windows 等价物 | 随使用持续确认 |
 
 ## 裁定
 
 - **CI 打包链:GO** — electrobun 能在 windows-latest 成功打包出便携 zip + 自更新元数据,核心技术风险(项目从未在 windows 验证 electrobun 打包)已消除。
-- **完整 GATE:待桌面验证** — 上表功能项 GO 后方可推进 G1(把 tag 默认发布切 electrobun)。NO-GO 则停在此排障。
+- **完整 GATE:GO** — 用户在真实 Windows 桌面实测 spike artifact 可正常启动运行;**放行 G1**(把默认发布切 electrobun)。扫描 / WSL 源探测 / 托盘 / zstd 等功能项随后续日常使用持续确认,非阻塞。
 
-## 备注:临时 CI 触发旁路
+## Follow-up(用户提出)
 
-当前操作账号 token 缺 `workflow` scope,无法 `workflow_dispatch`。为在 windows runner 验证,临时用 `spike-ci` 分支 + 「push 该分支触发 spike」的旁路(仅存在于 `spike-ci` 分支的 workflow,main 保持 dispatch-only)。完整 GATE GO 后删除该分支与旁路。
+- **Windows 默认产物应为真 portable,而非自解压 Setup**:electrobun win 默认产 `cc-session-manager-gui-Setup.zip`(内含自解压器 Setup.exe),解压后是安装器而非「解压即跑的目录」。用户期望默认 portable。需研究 electrobun 是否支持 portable 输出,或直接打包 `build/stable-win-x64/<app>/` 目录成 zip 绕过 self-extracting。后续单独处理。
