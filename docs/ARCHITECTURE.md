@@ -93,14 +93,14 @@ schema v3,9 张表:`projects` / `sessions`(索引镜像;真相永远是磁盘 js
 | 触发 | job | 产物 | 发布 |
 |---|---|---|---|
 | `workflow_dispatch tier=spike` | `spike` | electrobun 便携 zip | 仅 CI 自检,不发布 |
-| push tag `v*` | `electrobun-basic` | 便携 zip(**无**自更新元数据) | `gh release` 逐文件 |
-| Release published | `electrobun-full`(默认仅此) | zip + `tar.zst` + `update.json` | `gh release` 逐文件 |
+| push tag `v*` | `electrobun-basic` | **portable zip**(解压即跑,无自更新元数据) | `gh release` 逐文件 |
+| Release published | `electrobun-full`(默认仅此) | **portable zip + 自解压 Setup.zip** + `tar.zst` + `update.json` | `gh release` 逐文件 |
 | `workflow_dispatch runtime=electron/both` | `electron-full`(仅手动) | nsis + zip + `latest.yml` + blockmap | electron-builder `--publish always` |
 
 - **自动更新两套**:Electron=`electron-updater`(`platform/electron/updater.ts`,读 `latest.yml`,事件经 `app:update` 推渲染层);Electrobun=自带 bsdiff/全量(`electrobun.config.ts` 的 `release.baseUrl` + `update.json`,当前 `generatePatch:false` 纯全量)。
 - **元数据不进聚合包**:分发件只走 Release 资产逐文件上传,更新元数据(`update.json`/`latest.yml`/blockmap)一律独立文件,绝不放进任何聚合压缩包(纠正了旧 CI 把 `release/*` 聚合成单一 artifact 的痛点)。
 - **win.target 默认仅 zip**:`package.json` `build.win.target` 去 nsis;完整版 electron 路径 CLI `--win nsis zip` 覆盖加回。
-- 待办(follow-up):electrobun win 默认产自解压 `Setup.zip` 而非真 portable,后续改为解压即跑的目录 zip。
+- **portable 产物**(`scripts/pack-portable.mjs`):electrobun 无产 portable 的开关、且 stable build 会删真应用目录,故从 stable 全量包 `tar.zst` 还原真目录(zstd 解压用 Bun 内置 node:zlib、tar 解包用 `tar` 库,跨平台)再打 zip(Win=`Compress-Archive`/其它=`zip`)。产物根层即 `bin/launcher.exe` + `Resources/app`,解压到任意位置双击 launcher 即运行(相对 execPath 定位,无注册表/绝对安装路径依赖)。`bun run pack:portable` 本地亦可一键产。注:portable 与 electrobun 内置自更新(硬编码安装到 `%LOCALAPPDATA%`)语义冲突,故 portable 版明确不带 electrobun 自更新。
 
 ## 贯穿全局的约定
 

@@ -58,7 +58,8 @@
 - ✅ **electron-updater 接入**:新增 `UpdaterHost` 契约 + `ElectronUpdaterHost` 隔离;`app:update` 事件链 + 顶部更新提示条「有新版/下载中/可安装」。electrobun 渲染适配器补 no-op 同形(自带 bsdiff 不接 electron-updater)。
 - ✅ **electrobun 自更新**:`electrobun.config.ts` 补 `release.baseUrl` + `generatePatch:false`(纯全量)。
 - ✅ **win.target 默认 zip**(去 nsis,完整版 electron CLI `--win nsis zip` 覆盖加回);**版本单一真相源**(electrobun.config `app.version` 取 `package.json`)。
-- 🔜 follow-up:真 portable(非自解压 `Setup.zip`);electron-updater 下载/安装闭环双版本桌面验证;完整版 `release`/`electron-full` CI 路径端到端验证(本轮仅验证了 tag→electrobun-basic)。
+- ✅ **真 portable**(2026-06-23):`scripts/pack-portable.mjs` 从 stable `tar.zst` 还原真应用目录打 portable zip(解压即跑,非自解压 Setup);基础版改产 portable、完整版 portable + Setup 并存;CI 端到端验证 tag→portable zip GO(Release 仅单一 portable zip)。`bun run pack:portable` 本地一键产。
+- 🔜 follow-up:electron-updater 下载/安装闭环双版本桌面验证;完整版 `release`/`electron-full` CI 路径端到端验证(已验证 tag→electrobun-basic portable)。
 
 ## 🔜 下一步 / 遗留
 
